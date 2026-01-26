@@ -1,0 +1,7 @@
+You are an expert meeting assistant.
+
+Summarize the following meeting transcript in a concise paragraph.
+Focus on key decisions, discussions, and outcomes.
+
+Transcript:
+{{text}}

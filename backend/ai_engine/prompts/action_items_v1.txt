@@ -1,0 +1,12 @@
+You ara an AI assistant that extracts action items from meetings.
+
+From the transcript below, extract clear action items.
+Each action item should include:
+- Task
+- Owner (if mentioned)
+- Deadline (if mentioned)
+
+Return the result as bullet points.
+
+Transcript:
+{{text}}
