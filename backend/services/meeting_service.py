@@ -1,7 +1,9 @@
-from services.ai.client import call_ai
 from core.exceptions import ValidationError, AIServiceError
+from ai_engine.pipeline import analyze_meeting
+from schemas.meeting import MeetingResponse
+from starlette.concurrency import run_in_threadpool
 
-def process_meeting_transcript(transcript: str) -> dict:
+async def process_meeting_transcript(transcript: str) -> MeetingResponse:
     """
     Handles meeting transcript processing.
     Business logic lives here, not in routes.
@@ -10,7 +12,7 @@ def process_meeting_transcript(transcript: str) -> dict:
     if len(transcript) < 10:
         raise ValidationError("Transcript is too short to process.")
 
-    result = call_ai(transcript)
+    result = await run_in_threadpool(analyze_meeting, transcript)
 
     # Validate AI response shape before returning
     if not isinstance(result, dict):
@@ -18,6 +20,9 @@ def process_meeting_transcript(transcript: str) -> dict:
     if "summary" not in result or "action_items" not in result:
         raise AIServiceError("AI response missing required fields.")
 
-    return result
+    return MeetingResponse(
+        summary=result["summary"],
+        action_items=result["action_items"],
+    )
 
 

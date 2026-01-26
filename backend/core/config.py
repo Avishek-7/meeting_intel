@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     celery_result_bakcend: Optional[str] = None
 
     class Config:
-        env_file = ".env"
+        # Load env from project root when running inside backend/
+        env_file = "../.env"
+        env_file_encoding = "utf-8"
 
 settings = Settings()

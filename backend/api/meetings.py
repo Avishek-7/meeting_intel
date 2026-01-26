@@ -11,9 +11,9 @@ router = APIRouter(prefix="/meetings", tags=["Meetings"])
     response_model=MeetingResponse,
     status_code=status.HTTP_200_OK
 )
-def process_meeting(request: MeetingRequest, current_user: dict = Depends(get_current_user)):
+async def process_meeting(request: MeetingRequest, current_user: dict = Depends(get_current_user)):
     try:
-        return process_meeting_transcript(request.transcript)
+        return await process_meeting_transcript(request.transcript)
     except ValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

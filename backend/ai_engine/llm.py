@@ -1,6 +1,6 @@
 from openai import OpenAI
-from backend.core.config import settings
-from prompts.loader import load_prompt
+from core.config import settings
+from ai_engine.prompts.loader import load_prompt
 import logging
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -48,7 +48,7 @@ def summarize_text(text: str, version: str = "v1") -> str:
     """
     Generates a concise meeting summary using a versioned prompt. 
     """
-    prompt_template = load_prompt(f"summarize_meeting_{version}.txt")
+    prompt_template = load_prompt(f"summary_{version}")
     prompt = prompt_template.replace("{{text}}", text)
     
     return generate_response(prompt)
@@ -61,7 +61,7 @@ def extract_action_items(text: str, version: str = "v1") -> list[str]:
     Returns a list of strings.
     Parsing is intentionally convservation and defensive.
     """
-    prompt_template = load_prompt(f"extract_action_items_{version}.txt")
+    prompt_template = load_prompt(f"action_items_{version}")
     prompt = prompt_template.replace("{{text}}", text)
 
     response = generate_response(prompt)
