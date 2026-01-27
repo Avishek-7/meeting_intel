@@ -9,3 +9,7 @@ class ValidationError(MeetingIntelError):
 class AIServiceError(MeetingIntelError):
     """Raised when AI processing fails."""
     pass
+
+class DatabaseError(MeetingIntelError):
+    """Raised for database-related issues."""
+    pass

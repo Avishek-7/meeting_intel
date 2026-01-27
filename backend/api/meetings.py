@@ -7,7 +7,7 @@ from core.dependencies import get_current_user
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
 @router.post(
-    "/process",
+    "/analyze",
     response_model=MeetingResponse,
     status_code=status.HTTP_200_OK
 )

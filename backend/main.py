@@ -16,11 +16,3 @@ app.middleware("http")(log_request)
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
-
-@app.get("/authorize")
-def authorize():
-    return {
-        "message": "Authorization endpoint placeholder",
-        "hint": "Use POST /auth/login for password login"
-    }

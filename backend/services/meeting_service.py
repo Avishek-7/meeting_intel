@@ -2,6 +2,9 @@ from core.exceptions import ValidationError, AIServiceError
 from ai_engine.pipeline import analyze_meeting
 from schemas.meeting import MeetingResponse
 from starlette.concurrency import run_in_threadpool
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from core.exceptions import DatabaseError
 
 async def process_meeting_transcript(transcript: str) -> MeetingResponse:
     """

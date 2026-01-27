@@ -54,23 +54,48 @@ def summarize_text(text: str, version: str = "v1") -> str:
     return generate_response(prompt)
 
 
-def extract_action_items(text: str, version: str = "v1") -> list[str]:
+def extract_action_items(text: str, version: str = "v1") -> list[dict]:
     """
     Extracts action items from a meeting transcript.
 
-    Returns a list of strings.
-    Parsing is intentionally convservation and defensive.
+    Returns a list of dicts with task, owner, and due_date.
+    Parsing is intentionally conservative and defensive.
     """
     prompt_template = load_prompt(f"action_items_{version}")
     prompt = prompt_template.replace("{{text}}", text)
 
     response = generate_response(prompt)
 
-    # Defensive parsing: strip bullets and ignore empty lines
-    items=[]
+    # Defensive parsing: extract structured data from bullet points
+    items = []
     for line in response.splitlines():
         cleaned = line.lstrip("-•* ").strip()
         if cleaned:
-            items.append(cleaned)
+            # Parse format: "Task [Owner: X] [Deadline: Y]"
+            task = cleaned
+            owner = None
+            due_date = None
+            
+            # Extract owner if present
+            if "Owner:" in cleaned or "owner:" in cleaned:
+                parts = cleaned.split("Owner:", 1) if "Owner:" in cleaned else cleaned.split("owner:", 1)
+                task = parts[0].strip()
+                rest = parts[1]
+                if "Deadline:" in rest or "deadline:" in rest:
+                    owner_part = rest.split("Deadline:", 1)[0] if "Deadline:" in rest else rest.split("deadline:", 1)[0]
+                    owner = owner_part.strip()
+                else:
+                    owner = rest.strip()
+            
+            # Extract deadline if present
+            if "Deadline:" in cleaned or "deadline:" in cleaned:
+                deadline_part = cleaned.split("Deadline:", 1) if "Deadline:" in cleaned else cleaned.split("deadline:", 1)
+                due_date = deadline_part[1].strip()
+            
+            items.append({
+                "task": task.strip(",;"),
+                "owner": owner,
+                "due_date": due_date
+            })
 
     return items

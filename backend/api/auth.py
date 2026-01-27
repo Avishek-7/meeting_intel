@@ -1,15 +1,15 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.security import OAuth2PasswordRequestForm
 from core.security import create_access_token, verify_password
-from schemas.auth import LoginRequest
 from core.users import fake_users_db
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/login")
-def login(request: LoginRequest):
-    user = fake_users_db.get(request.username)
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = fake_users_db.get(form_data.username)
 
-    if not user or not verify_password(request.password, user["hashed_password"]):
+    if not user or not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password"

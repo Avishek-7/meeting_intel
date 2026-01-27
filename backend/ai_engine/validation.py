@@ -1,13 +1,24 @@
 
-def validate_summary(summary: str) -> bool:
-    return isinstance(summary, str) and len(summary) > 0
+def validate_summary(summary: str) -> str:
+    """Validate and return summary, ensuring it's a non-empty string."""
+    if not isinstance(summary, str) or len(summary) == 0:
+        return "No summary available"
+    return summary.strip()
 
 def validate_action_items(items: list[dict] | None) -> list[dict]:
+    """Validate action items and apply defaults for missing fields."""
     validated = []
-    for item in items or []: 
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        
+        task = item.get("task", "").strip()
+        if not task:  # Skip empty tasks
+            continue
+            
         validated.append({
-            "task": item.get("task", "").strip(),
-            "owner": item.get("owner", "Not specified").strip(),
-            "deadline": item.get("deadline", "N/A")
+            "task": task,
+            "owner": item.get("owner") or "Not specified",
+            "due_date": item.get("due_date") or "N/A"
         })
     return validated
