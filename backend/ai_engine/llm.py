@@ -1,7 +1,11 @@
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from core.config import settings
+from core.exceptions import AIServiceError
 from ai_engine.prompts.loader import load_prompt
 import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -23,6 +27,8 @@ def generate_response(prompt: str) -> str:
     - No orchestration 
     """
 
+    logger.info("Calling LLM with model=%s, prompt_length=%s", DEFAULT_MODEL, len(prompt))
+    start_time = time.perf_counter()
     try:
         response = client.chat.completions.create(
             model=DEFAULT_MODEL,
@@ -33,21 +39,29 @@ def generate_response(prompt: str) -> str:
             temperature=DEFAULT_TEMPERATURE,
         )
 
+        duration = time.perf_counter() - start_time
+        logger.info("LLM call completed in %.2fs", duration)
+
         content = response.choices[0].message.content
         if not content:
+            logger.error("LLM returned empty response content.")
             raise ValueError("Empty response from LLM")
         
         return content.strip()
     
+    except RateLimitError as e:
+        logger.warning("LLM rate limit or quota exceeded.", exc_info=e)
+        raise AIServiceError("LLM quota exceeded or rate-limited.") from e
     except Exception as e:
-        logging.error("OpenAI LLM call failed: %s", e)
-        raise RuntimeError("Failed to generate LLM response") from e
+        logger.error("OpenAI LLM call failed.", exc_info=e)
+        raise AIServiceError("Failed to generate LLM response") from e
     
 
 def summarize_text(text: str, version: str = "v1") -> str:
     """
     Generates a concise meeting summary using a versioned prompt. 
     """
+    logger.info("Generating summary with prompt version=%s, text_length=%s", version, len(text))
     prompt_template = load_prompt(f"summary_{version}")
     prompt = prompt_template.replace("{{text}}", text)
     
@@ -61,6 +75,7 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
     Returns a list of dicts with task, owner, and due_date.
     Parsing is intentionally conservative and defensive.
     """
+    logger.info("Extracting action items with prompt version=%s, text_length=%s", version, len(text))
     prompt_template = load_prompt(f"action_items_{version}")
     prompt = prompt_template.replace("{{text}}", text)
 
@@ -98,4 +113,5 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
                 "due_date": due_date
             })
 
+    logger.info("Extracted %s action items", len(items))
     return items
