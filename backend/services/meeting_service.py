@@ -3,7 +3,7 @@ from ai_engine.pipeline import analyze_meeting
 from schemas.meeting import MeetingResponse
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy import select
 from core.exceptions import DatabaseError
 from models.meeting import Meeting, ActionItem
@@ -57,10 +57,13 @@ async def process_meeting_transcript(
             logger.error("Failed to decode cached AI response.", exc_info=e)
             raise AIServiceError("Cached AI response is corrupted.") from e
 
-        if not isinstance(result, dict):
-            logger.error("Cached AI response is not a dict.")
+        try:
+            _validate_ai_result(result)
+        except AIServiceError:
+            logger.error("Cached AI response failed validation.")
             raise AIServiceError("Cached AI response is corrupted.")
         from_cache = True
+
     else:
         logger.info(f"Cache MISS for key: {cache_key} calling AI engine.")
         ai_start = time.perf_counter()
@@ -79,17 +82,17 @@ async def process_meeting_transcript(
         except Exception as e:
             logger.warning("Redis SETEX failed; continuing without cache.", exc_info=e)
     
-    if from_cache:
-        logger.info("Cache result detected; checking for existing transcript in database.")
-        existing = await db.execute(
-            select(Meeting.id).where(Meeting.transcript == transcript)
+    logger.info("Checking for existing transcript in database.")
+    existing = await db.execute(
+        select(Meeting.id).where(Meeting.transcript == transcript)
+    )
+    existing_meeting_id = existing.scalar_one_or_none()
+    if existing_meeting_id is not None:
+        logger.info("Meeting already persisted; returning cached summary and action items.")
+        return MeetingResponse(
+            summary=result["summary"],
+            action_items=result["action_items"],
         )
-        if existing.scalar_one_or_none() is not None:
-            logger.info("Meeting already persisted; skipping DB insert for cached result.")
-            return MeetingResponse(
-                summary=result["summary"],
-                action_items=result["action_items"],
-            )
 
     try:
         logger.info("Persisting meeting data to database.")
@@ -107,6 +110,19 @@ async def process_meeting_transcript(
             ]
             db.add_all(action_items)
         logger.info("Meeting data persisted successfully.")
+    except IntegrityError as e:
+        logger.warning("Concurrent insert detected; rolling back and fetching existing entry.", exc_info=e)
+        await db.rollback()
+        existing = await db.execute(
+            select(Meeting.id).where(Meeting.transcript == transcript)
+        )
+        if existing.scalar_one_or_none() is not None:
+            logger.info("Concurrent insert resolved; returning result.")
+            return MeetingResponse(
+                summary=result["summary"],
+                action_items=result["action_items"],
+            )
+        raise DatabaseError("Failed to persist meeting data.") from e
     except SQLAlchemyError as e:
         logger.error("Database error while persisting meeting data.", exc_info=e)
         raise DatabaseError("Failed to persist meeting data.") from e

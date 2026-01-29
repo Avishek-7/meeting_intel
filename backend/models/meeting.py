@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
@@ -9,7 +9,7 @@ Base = declarative_base()
 class Meeting(Base):
     __tablename__ = "meetings"
     id = Column(Integer, primary_key=True, index=True)
-    transcript = Column(String, nullable=False)
+    transcript = Column(String, nullable=False, unique=True)
     summary = Column(String, nullable=True)
 
     action_items = relationship(

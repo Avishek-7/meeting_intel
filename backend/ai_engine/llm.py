@@ -50,10 +50,10 @@ def generate_response(prompt: str) -> str:
         return content.strip()
     
     except RateLimitError as e:
-        logger.warning("LLM rate limit or quota exceeded.", exc_info=e)
+        logger.warning("LLM rate limit or quota exceeded.", exc_info=True)
         raise AIServiceError("LLM quota exceeded or rate-limited.") from e
     except Exception as e:
-        logger.error("OpenAI LLM call failed.", exc_info=e)
+        logger.error("OpenAI LLM call failed.", exc_info=True)
         raise AIServiceError("Failed to generate LLM response") from e
     
 
@@ -106,6 +106,9 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
             if "Deadline:" in cleaned or "deadline:" in cleaned:
                 deadline_part = cleaned.split("Deadline:", 1) if "Deadline:" in cleaned else cleaned.split("deadline:", 1)
                 due_date = deadline_part[1].strip()
+                # Update task if owner wasn't already extracted (which would have set task correctly)
+                if owner is None:
+                    task = deadline_part[0].strip()
             
             items.append({
                 "task": task.strip(",;"),

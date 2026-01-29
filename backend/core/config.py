@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # Celery settings
     celery_broker_url: Optional[str] = None
-    celery_result_bakcend: Optional[str] = None
+    celery_result_backend: Optional[str] = None
 
     class Config:
         # Load env from project root when running inside backend/

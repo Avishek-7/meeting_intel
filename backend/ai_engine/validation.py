@@ -1,7 +1,7 @@
 
 def validate_summary(summary: str) -> str:
     """Validate and return summary, ensuring it's a non-empty string."""
-    if not isinstance(summary, str) or len(summary) == 0:
+    if not isinstance(summary, str) or not summary.strip():
         return "No summary available"
     return summary.strip()
 
