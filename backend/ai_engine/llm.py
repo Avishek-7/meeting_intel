@@ -55,7 +55,6 @@ def _call_openai(prompt: str) -> str:
         ],
         temperature=DEFAULT_TEMPERATURE,
         max_tokens=MAX_TOKENS,
-        timeout=settings.OPENAI_REQUEST_TIMEOUT,
     )
     return response.choices[0].message.content
 
@@ -85,7 +84,7 @@ def generate_response(prompt: str) -> str:
     
     except RateLimitError as e:
         # Rate limit/quota error persisted after retries
-        logger.warning("LLM rate limit or quota exceeded after %d retries.", MAX_RETRIES, exc_info=True)
+        logger.warning("LLM rate limit or quota exceeded after %d retries.", MAX_RETRIES - 1, exc_info=True)
         raise AIServiceError("LLM quota exceeded. Check your API plan and billing.") from e
     except AuthenticationError as e:
         # Permanent auth error - don't retry
@@ -93,7 +92,12 @@ def generate_response(prompt: str) -> str:
         raise AIServiceError("LLM authentication failed. Check your API key.") from e
     except APITimeoutError as e:
         # Request timeout - transient but worth logging
-        logger.warning(f"LLM request timeout after {settings.OPENAI_REQUEST_TIMEOUT}s (retry limit: {MAX_RETRIES}).", exc_info=True)
+        logger.warning(
+            "LLM request timeout after %ss (retry limit: %d).",
+            settings.OPENAI_REQUEST_TIMEOUT,
+            MAX_RETRIES,
+            exc_info=True,
+        )
         raise AIServiceError("LLM request timed out. Request too complex or service slow.") from e
     except (APIError,) as e:
         # Transient errors already retried by decorator, still failing
