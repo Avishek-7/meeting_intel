@@ -84,8 +84,8 @@ def generate_response(prompt: str) -> str:
         return content.strip()
     
     except RateLimitError as e:
-        # Permanent quota error - don't retry
-        logger.warning("LLM quota exceeded (permanent error).", exc_info=True)
+        # Rate limit/quota error persisted after retries
+        logger.warning("LLM rate limit or quota exceeded after %d retries.", MAX_RETRIES, exc_info=True)
         raise AIServiceError("LLM quota exceeded. Check your API plan and billing.") from e
     except AuthenticationError as e:
         # Permanent auth error - don't retry

@@ -49,9 +49,10 @@ def validate_action_items(items: list[dict] | None) -> list[dict]:
             logger.warning("Truncating task at index %d (length: %d)", idx, len(task))
             task = task[:500]
         
-        owner = item.get("owner", "").strip() or "Not specified"
-        due_date = item.get("due_date", "").strip() or "N/A"
-        priority = item.get("priority", "medium").lower()
+        owner = str(item.get("owner") or "").strip() or "Not specified"
+        due_date = str(item.get("due_date") or "").strip() or "N/A"
+        priority_raw = item.get("priority")
+        priority = str(priority_raw).lower() if priority_raw else "medium"
         
         # Validate priority
         if priority not in ["high", "medium", "low"]:
