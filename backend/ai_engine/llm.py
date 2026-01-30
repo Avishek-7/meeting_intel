@@ -4,6 +4,7 @@ from core.exceptions import AIServiceError
 from ai_engine.prompts.loader import load_prompt
 import logging
 import time
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,8 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
     response = generate_response(prompt)
 
     # Defensive parsing: extract structured data from bullet points
+    owner_pattern = re.compile(r"owner:\s*", re.IGNORECASE)
+    deadline_pattern = re.compile(r"deadline:\s*", re.IGNORECASE)
     items = []
     for line in response.splitlines():
         cleaned = line.lstrip("-•* ").strip()
@@ -91,24 +94,21 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
             owner = None
             due_date = None
             
-            # Extract owner if present
-            if "Owner:" in cleaned or "owner:" in cleaned:
-                parts = cleaned.split("Owner:", 1) if "Owner:" in cleaned else cleaned.split("owner:", 1)
-                task = parts[0].strip()
-                rest = parts[1]
-                if "Deadline:" in rest or "deadline:" in rest:
-                    owner_part = rest.split("Deadline:", 1)[0] if "Deadline:" in rest else rest.split("deadline:", 1)[0]
-                    owner = owner_part.strip()
+            owner_match = owner_pattern.search(cleaned)
+            if owner_match:
+                task = cleaned[:owner_match.start()].strip()
+                rest = cleaned[owner_match.end():]
+                deadline_match = deadline_pattern.search(rest)
+                if deadline_match:
+                    owner = rest[:deadline_match.start()].strip()
+                    due_date = rest[deadline_match.end():].strip()
                 else:
                     owner = rest.strip()
-            
-            # Extract deadline if present
-            if "Deadline:" in cleaned or "deadline:" in cleaned:
-                deadline_part = cleaned.split("Deadline:", 1) if "Deadline:" in cleaned else cleaned.split("deadline:", 1)
-                due_date = deadline_part[1].strip()
-                # Update task if owner wasn't already extracted (which would have set task correctly)
-                if owner is None:
-                    task = deadline_part[0].strip()
+            else:
+                deadline_match = deadline_pattern.search(cleaned)
+                if deadline_match:
+                    task = cleaned[:deadline_match.start()].strip()
+                    due_date = cleaned[deadline_match.end():].strip()
             
             items.append({
                 "task": task.strip(",;"),

@@ -1,3 +1,4 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -20,7 +21,7 @@ class Settings(BaseSettings):
 
     class Config:
         # Load env from project root when running inside backend/
-        env_file = "../.env"
+        env_file = str(Path(__file__).resolve().parent.parent.parent / ".env")
         env_file_encoding = "utf-8"
 
 settings = Settings()

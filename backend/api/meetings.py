@@ -5,6 +5,9 @@ from services.meeting_service import process_meeting_transcript
 from core.exceptions import ValidationError, AIServiceError, DatabaseError
 from core.dependencies import get_current_user
 from core.database import get_db
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
@@ -28,12 +31,14 @@ async def process_meeting(
         )
     
     except AIServiceError:
+        logger.exception("AI service error during meeting processing.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Meeting processing service is currently unavailable."
         )
     
     except DatabaseError:
+        logger.exception("Database error during meeting processing.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save meeting data."
@@ -41,6 +46,7 @@ async def process_meeting(
     
     except Exception:
         # Catch-all safety net
+        logger.exception("Unexpected error during meeting processing.") 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"

@@ -1,5 +1,5 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 class LoginRequest(BaseModel):
     username: str
-    password: str
+    password: SecretStr

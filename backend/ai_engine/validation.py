@@ -18,7 +18,7 @@ def validate_action_items(items: list[dict] | None) -> list[dict]:
             
         validated.append({
             "task": task,
-            "owner": item.get("owner") or "Not specified",
+            "owner": item.get("owner", "").strip() or "Not specified",
             "due_date": item.get("due_date") or "N/A"
         })
     return validated

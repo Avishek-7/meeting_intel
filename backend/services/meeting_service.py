@@ -1,11 +1,10 @@
-from core.exceptions import ValidationError, AIServiceError
+from core.exceptions import ValidationError, AIServiceError, DatabaseError
 from ai_engine.pipeline import analyze_meeting
 from schemas.meeting import MeetingResponse
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy import select
-from core.exceptions import DatabaseError
 from models.meeting import Meeting, ActionItem
 from core.cache import redis_client
 from core.cache_keys import meeting_cache_key

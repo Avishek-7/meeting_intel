@@ -44,7 +44,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         except SQLAlchemyError as e:
-            logger.error("Database error during session.", exc_info=e)
+            logger.error("Database error during session.", exc_info=True)
             raise
         finally:
             logger.debug("Closing async database session.")
