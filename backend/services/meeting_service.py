@@ -6,13 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy import select
 from models.meeting import Meeting, ActionItem
-from core.cache import redis_client
+from core.cache import get_redis_client
 from core.cache_keys import meeting_cache_key
 import json
 import logging
 import time
 
 logger = logging.getLogger(__name__)
+redis_client = get_redis_client()
 
 CACHE_TTL_SECONDS = 60 * 10 # 10 minutes
 

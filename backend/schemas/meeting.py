@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from enum import Enum
 
@@ -13,7 +13,8 @@ class ActionItem(BaseModel):
     due_date: str = Field(default="N/A", description="Due date or deadline")
     priority: PriorityLevel = Field(default=PriorityLevel.MEDIUM, description="Priority level")
     
-    @validator('task')
+    @field_validator('task')
+    @classmethod
     def task_not_empty(cls, v):
         if not v or not v.strip():
             raise ValueError("Task cannot be empty")
@@ -27,7 +28,8 @@ class MeetingResponse(BaseModel):
     summary: str = Field(..., min_length=1, description="Meeting summary")
     action_items: List[ActionItem] = Field(default_factory=list, description="Extracted action items")
     
-    @validator('summary')
+    @field_validator('summary')
+    @classmethod
     def summary_not_empty(cls, v):
         if not v or not v.strip():
             raise ValueError("Summary cannot be empty")
