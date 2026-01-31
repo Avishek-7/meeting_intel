@@ -24,7 +24,7 @@ def test_analyze_meeting_endpoint(monkeypatch):
     )
 
     payload = {
-        "transcript": "We discussed deadlines. Jhon will prepare the report."
+        "transcript": "We discussed deadlines. John will prepare the report."
     }
 
     response = client.post("/meetings/analyze", json=payload, headers=headers)
