@@ -55,7 +55,7 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
         raise DatabaseError("Failed to create or retrieve user")
         
     except SQLAlchemyError as e:
-        logger.error(f"Database error managing user: {email}", exc_info=True)
+        logger.error("Database error managing user", exc_info=True)
         await db.rollback()
         raise DatabaseError("Failed to manage user") from e
 

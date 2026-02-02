@@ -22,15 +22,16 @@ async def process_meeting(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    # Validate user identity before processing
+    # This must be outside the try block to avoid being masked by the generic exception handler
+    username = current_user.get("username")
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User identification not available"
+        )
+    
     try:
-        # Get or create database user from authenticated username
-        username = current_user.get("username")
-        if not username:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User identification not available"
-            )
-        
         # Use email as username@domain or just username if no email available
         # In future, JWT token should contain email or user UUID
         email = current_user.get("email") or f"{username}@meetingintel.local"
@@ -59,7 +60,9 @@ async def process_meeting(
         )
     
     except Exception:
-        # Catch-all safety net
+        # Catch-all safety net - re-raise HTTPException to avoid masking auth errors
+        if isinstance(Exception, HTTPException):
+            raise
         logger.exception("Unexpected error during meeting processing.") 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
