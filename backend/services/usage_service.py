@@ -4,6 +4,7 @@ from models.usage_record import UsageRecord
 from decimal import Decimal
 import uuid
 import logging
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,14 @@ MODEL_PRICING = {
 
 def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> Decimal:
     """Calculate estimated cost based on model and token usage."""
+    # Validate token counts
+    if prompt_tokens < 0 or completion_tokens < 0:
+        raise ValueError("Token counts cannot be negative")
+    
+    # Get pricing and warn if model is unknown
     pricing = MODEL_PRICING.get(model_name, MODEL_PRICING["gpt-3.5-turbo"])
+    if model_name not in MODEL_PRICING:
+        logger.warning(f"Unknown model '{model_name}', using default pricing (gpt-3.5-turbo)")
     
     prompt_cost = (Decimal(prompt_tokens) / Decimal("1000000")) * pricing["prompt"]
     completion_cost = (Decimal(completion_tokens) / Decimal("1000000")) * pricing["completion"]
@@ -73,14 +81,17 @@ async def track_ai_usage(
         await db.commit()
         await db.refresh(usage_record)
         
-        logger.info(
-            f"Tracked AI usage: user={user_id}, meeting={meeting_id}, "
+        # Log with hashed user_id for privacy compliance (GDPR/CCPA)
+        # Avoid logging raw user identifiers that could be linked to individuals
+        user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
+        logger.debug(
+            f"Tracked AI usage: user_hash={user_hash}, meeting_id={meeting_id}, "
             f"model={model_name}, tokens={total_tokens}, cost=${estimated_cost:.6f}"
         )
         
         return usage_record
         
     except SQLAlchemyError as e:
-        logger.error("Failed to track AI usage", exc_info=e)
+        logger.error(f"Failed to track AI usage: {e}", exc_info=True)
         await db.rollback()
         raise

@@ -40,6 +40,14 @@ async def process_meeting_transcript(
     Business logic lives here, not in routes.
     """
     logger.info("Processing meeting transcript.")
+    
+    # Validate user_id format early
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Invalid user_id format: {user_id}", exc_info=e)
+        raise ValidationError("Invalid user_id format.") from e
+    
     # Business rule validation
     if len(transcript) < 10:
         logger.warning("Transcript too short to process.")
@@ -107,7 +115,7 @@ async def process_meeting_transcript(
         async with db.begin():
             meeting = Meeting(
                 id=uuid.uuid4(),
-                user_id=uuid.UUID(user_id),
+                user_id=user_uuid,
                 transcript_text=transcript,
                 transcript_hash=transcript_hash,
                 summary_text=result["summary"],
@@ -122,7 +130,7 @@ async def process_meeting_transcript(
                     usage_info = result["usage"]
                     await track_ai_usage(
                         db=db,
-                        user_id=uuid.UUID(user_id),
+                        user_id=user_uuid,
                         meeting_id=meeting.id,
                         model_name=usage_info.get("model", "unknown"),
                         prompt_tokens=usage_info.get("prompt_tokens", 0),

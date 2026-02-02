@@ -27,7 +27,7 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
         user = result.scalar_one_or_none()
         
         if user:
-            logger.info(f"Found existing user with email: {email}")
+            logger.info(f"Found existing user with id: {user.id}")
             return user
         
         # Create new user
@@ -39,7 +39,7 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
         await db.commit()
         await db.refresh(user)
         
-        logger.info(f"Created new user with email: {email}")
+        logger.info(f"Created new user with id: {user.id}")
         return user
         
     except IntegrityError:
@@ -50,12 +50,12 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
         )
         user = result.scalar_one_or_none()
         if user:
-            logger.info(f"User created concurrently, retrieved: {email}")
+            logger.info(f"User created concurrently, retrieved id: {user.id}")
             return user
         raise DatabaseError("Failed to create or retrieve user")
         
     except SQLAlchemyError as e:
-        logger.error(f"Database error managing user: {email}", exc_info=e)
+        logger.error(f"Database error managing user: {email}", exc_info=True)
         await db.rollback()
         raise DatabaseError("Failed to manage user") from e
 
@@ -76,5 +76,5 @@ async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
         )
         return result.scalar_one_or_none()
     except SQLAlchemyError as e:
-        logger.error(f"Database error retrieving user: {user_id}", exc_info=e)
+        logger.error(f"Database error retrieving user: {user_id}", exc_info=True)
         raise DatabaseError("Failed to retrieve user") from e
