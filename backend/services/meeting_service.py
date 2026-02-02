@@ -5,12 +5,16 @@ from starlette.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy import select
-from models.meeting import Meeting, ActionItem
+from models.meeting import Meeting
 from core.cache import get_redis_client
 from core.cache_keys import meeting_cache_key
+from core.cache_invalidation import invalidate_meeting_cache
+from services.usage_service import track_ai_usage
 import json
 import logging
 import time
+import hashlib
+import uuid
 
 logger = logging.getLogger(__name__)
 redis_client = get_redis_client()
@@ -28,7 +32,8 @@ def _validate_ai_result(result: dict) -> None:
 
 async def process_meeting_transcript(
         transcript: str,
-        db: AsyncSession
+        db: AsyncSession,
+        user_id: str
 ) -> MeetingResponse:
     """
     Handles meeting transcript processing.
@@ -82,9 +87,12 @@ async def process_meeting_transcript(
         except Exception as e:
             logger.warning("Redis SETEX failed; continuing without cache.", exc_info=e)
     
+    # Calculate transcript hash for deduplication
+    transcript_hash = hashlib.sha256(transcript.encode('utf-8')).hexdigest()
+    
     logger.info("Checking for existing transcript in database.")
     existing = await db.execute(
-        select(Meeting.id).where(Meeting.transcript == transcript)
+        select(Meeting.id).where(Meeting.transcript_hash == transcript_hash)
     )
     existing_meeting_id = existing.scalar_one_or_none()
     if existing_meeting_id is not None:
@@ -98,23 +106,38 @@ async def process_meeting_transcript(
         logger.info("Persisting meeting data to database.")
         async with db.begin():
             meeting = Meeting(
-                transcript=transcript,
-                summary=result["summary"]
+                id=uuid.uuid4(),
+                user_id=uuid.UUID(user_id),
+                transcript_text=transcript,
+                transcript_hash=transcript_hash,
+                summary_text=result["summary"],
+                action_items=result["action_items"]
             )
             db.add(meeting)
             await db.flush()
-
-            action_items = [
-                ActionItem(meeting_id=meeting.id, content=item)
-                for item in result["action_items"]
-            ]
-            db.add_all(action_items)
+            
+            # Track AI usage if token info is available in result
+            if "usage" in result and not from_cache:
+                try:
+                    usage_info = result["usage"]
+                    await track_ai_usage(
+                        db=db,
+                        user_id=uuid.UUID(user_id),
+                        meeting_id=meeting.id,
+                        model_name=usage_info.get("model", "unknown"),
+                        prompt_tokens=usage_info.get("prompt_tokens", 0),
+                        completion_tokens=usage_info.get("completion_tokens", 0)
+                    )
+                except Exception as e:
+                    logger.warning("Failed to track AI usage, continuing anyway", exc_info=e)
+                    
         logger.info("Meeting data persisted successfully.")
+        invalidate_meeting_cache(transcript)
     except IntegrityError as e:
         logger.warning("Concurrent insert detected; rolling back and fetching existing entry.", exc_info=e)
         await db.rollback()
         existing = await db.execute(
-            select(Meeting.id).where(Meeting.transcript == transcript)
+            select(Meeting.id).where(Meeting.transcript_hash == transcript_hash)
         )
         if existing.scalar_one_or_none() is not None:
             logger.info("Concurrent insert resolved; returning result.")

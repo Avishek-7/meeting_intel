@@ -6,6 +6,7 @@ from core.exceptions import ValidationError, AIServiceError, DatabaseError
 from core.dependencies import get_current_user
 from core.database import get_db
 import logging
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,10 @@ async def process_meeting(
     db: AsyncSession = Depends(get_db)
 ):
     try:
-        return await process_meeting_transcript(request.transcript, db)
+        # For now, use username as user_id since we don't have UUID-based users yet
+        # TODO: Replace with actual UUID user_id when User model is implemented
+        user_id = str(uuid.uuid4())  # Temporary: generate a UUID
+        return await process_meeting_transcript(request.transcript, db, user_id)
     
     except ValidationError as e:
         raise HTTPException(

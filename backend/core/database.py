@@ -38,6 +38,10 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 Base = declarative_base()
+
+# Import models to register them with SQLAlchemy
+from models import Meeting, User, UsageRecord  # noqa: E402
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     logger.debug("Opening async database session.")
     async with AsyncSessionLocal() as session:
