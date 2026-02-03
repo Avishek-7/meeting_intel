@@ -1,4 +1,5 @@
 import logging
+import sys
 import structlog
 from structlog.stdlib import LoggerFactory
 from rich.logging import RichHandler
@@ -11,12 +12,13 @@ def configure_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(message)s",
-        datefmt="[%H:%M:%S]",
+        # datefmt="[%H:%M:%S]",
         handlers=[
             RichHandler(
                 rich_tracebacks=True,
                 tracebacks_show_locals=True,
                 show_path=False,
+                show_time=False,
             )
         ],
     )
@@ -33,7 +35,7 @@ def configure_logging() -> None:
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             timestamper,
-            structlog.dev.ConsoleRenderer(colors=True),  # 🔥 THIS
+            structlog.dev.ConsoleRenderer(colors=False),
         ],
     )
 
