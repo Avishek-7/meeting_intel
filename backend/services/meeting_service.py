@@ -59,7 +59,7 @@ async def process_meeting_transcript(
     try:
         cached_result = redis_client.get(cache_key)
     except Exception as e:
-        logger.warning("Redis GET failed; proceeding without cache.", exc_info=e)
+        logger.error(f"Redis GET failed for key: {cache_key}", exc_info=True)
 
     from_cache = False
     if cached_result:
@@ -93,7 +93,7 @@ async def process_meeting_transcript(
             )
             logger.info(f"Cached AI response with TTL {CACHE_TTL_SECONDS}s.")
         except Exception as e:
-            logger.warning("Redis SETEX failed; continuing without cache.", exc_info=e)
+            logger.error(f"Redis SETEX failed for key: {cache_key}", exc_info=True)
     
     # Calculate transcript hash for deduplication
     transcript_hash = hashlib.sha256(transcript.encode('utf-8')).hexdigest()
