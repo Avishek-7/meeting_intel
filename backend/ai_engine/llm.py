@@ -8,12 +8,12 @@ from tenacity import (
 from core.config import settings
 from core.exceptions import AIServiceError
 from ai_engine.prompts.loader import load_prompt
-import logging
+import structlog
 import time
 import re
 import json
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("ai_engine.llm")
 
 RETRY_ERRORS = (
     APIError,
@@ -68,43 +68,44 @@ def generate_response(prompt: str) -> str:
     - No orchestration 
     """
 
-    logger.info("Calling LLM with model=%s, prompt_length=%s", DEFAULT_MODEL, len(prompt))
+    logger.info("llm_call_start", model=DEFAULT_MODEL, prompt_length=len(prompt))
     start_time = time.perf_counter()
     
     try:
         content = _call_openai(prompt)
-        duration = time.perf_counter() - start_time
-        logger.info("LLM call completed in %.2fs", duration)
+        latency = time.perf_counter() - start_time
+        logger.info("llm_call_success", model=DEFAULT_MODEL, latency_seconds=round(latency, 3))
         
         if not content:
-            logger.error("LLM returned empty response content.")
+            logger.error("llm_call_empty_response", latency_seconds=round(latency, 3))
             raise ValueError("Empty response from LLM")
         
         return content.strip()
     
     except RateLimitError as e:
-        # Rate limit/quota error persisted after retries
-        logger.warning("LLM rate limit or quota exceeded after %d retries.", MAX_RETRIES - 1, exc_info=True)
+        latency = time.perf_counter() - start_time
+        logger.warning("llm_call_rate_limit", latency_seconds=round(latency, 3), retries=MAX_RETRIES - 1)
         raise AIServiceError("LLM quota exceeded. Check your API plan and billing.") from e
     except AuthenticationError as e:
-        # Permanent auth error - don't retry
-        logger.error("LLM authentication failed.", exc_info=True)
+        latency = time.perf_counter() - start_time
+        logger.error("llm_call_auth_error", latency_seconds=round(latency, 3))
         raise AIServiceError("LLM authentication failed. Check your API key.") from e
     except APITimeoutError as e:
-        # Request timeout - transient but worth logging
+        latency = time.perf_counter() - start_time
         logger.warning(
-            "LLM request timeout after %ss (retry limit: %d).",
-            settings.OPENAI_REQUEST_TIMEOUT,
-            MAX_RETRIES,
-            exc_info=True,
+            "llm_call_timeout",
+            timeout_seconds=settings.OPENAI_REQUEST_TIMEOUT,
+            latency_seconds=round(latency, 3),
+            retries=MAX_RETRIES,
         )
         raise AIServiceError("LLM request timed out. Request too complex or service slow.") from e
     except (APIError,) as e:
-        # Transient errors already retried by decorator, still failing
-        logger.warning("LLM transient error persisted after retries.", exc_info=True)
+        latency = time.perf_counter() - start_time
+        logger.warning("llm_call_api_error", latency_seconds=round(latency, 3))
         raise AIServiceError("LLM service temporarily unavailable after retries.") from e
     except Exception as e:
-        logger.error("OpenAI LLM call failed.", exc_info=True)
+        latency = time.perf_counter() - start_time
+        logger.error("llm_call_failed", latency_seconds=round(latency, 3))
         raise AIServiceError("Failed to generate LLM response") from e
     
 
@@ -113,21 +114,32 @@ def summarize_text(text: str, version: str = "v1") -> str:
     Generates a concise meeting summary using a versioned prompt.
     Requests JSON structured output.
     """
-    logger.info("Generating summary with prompt version=%s, text_length=%s", version, len(text))
-    prompt_template = load_prompt(f"summary_{version}")
-    prompt = prompt_template.replace("{{text}}", text)
-    
-    # Request JSON output
-    prompt += "\n\nRespond with JSON in format: {\"summary\": \"<summary text>\"}"
-    
-    response = generate_response(prompt)
+    start_time = time.perf_counter()
+    logger.info("summarize_start", version=version, text_length=len(text))
     
     try:
-        data = json.loads(response)
-        return data.get("summary", response.strip())
-    except (json.JSONDecodeError, AttributeError):
-        logger.warning("Summary response not valid JSON, using raw text")
-        return response.strip()
+        prompt_template = load_prompt(f"summary_{version}")
+        prompt = prompt_template.replace("{{text}}", text)
+        
+        # Request JSON output
+        prompt += "\n\nRespond with JSON in format: {\"summary\": \"<summary text>\"}"
+        
+        response = generate_response(prompt)
+        
+        try:
+            data = json.loads(response)
+            result = data.get("summary", response.strip())
+        except (json.JSONDecodeError, AttributeError):
+            logger.warning("summarize_json_parse_failed", version=version)
+            result = response.strip()
+        
+        latency = time.perf_counter() - start_time
+        logger.info("summarize_success", version=version, latency_seconds=round(latency, 3), summary_length=len(result))
+        return result
+    except Exception:
+        latency = time.perf_counter() - start_time
+        logger.error("summarize_failed", version=version, latency_seconds=round(latency, 3))
+        raise
 
 
 def extract_action_items(text: str, version: str = "v1") -> list[dict]:
@@ -137,7 +149,9 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
 
     Returns a list of dicts with task, owner, due_date, and priority.
     """
-    logger.info("Extracting action items with prompt version=%s, text_length=%s", version, len(text))
+    start_time = time.perf_counter()
+    logger.info("extract_actions_start", version=version, text_length=len(text))
+    
     prompt_template = load_prompt(f"action_items_{version}")
     prompt = prompt_template.replace("{{text}}", text)
     
@@ -157,19 +171,19 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
         items = data.get("action_items", [])
         
         if not isinstance(items, list):
-            logger.error("action_items is not a list in JSON response")
+            logger.error("extract_actions_json_list_invalid", version=version)
             return []
         
         # Validate and normalize
         validated = []
         for idx, item in enumerate(items):
             if not isinstance(item, dict):
-                logger.warning("Skipping non-dict item at index %d", idx)
+                logger.warning("extract_actions_item_not_dict", version=version, index=idx)
                 continue
             
             task = item.get("task", "").strip()
             if not task:
-                logger.warning("Skipping item at index %d: empty task", idx)
+                logger.warning("extract_actions_empty_task", version=version, index=idx)
                 continue
             
             owner = item.get("owner", "").strip() or "Not specified"
@@ -178,7 +192,7 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
             
             # Validate priority
             if priority not in ["high", "medium", "low"]:
-                logger.warning("Invalid priority at index %d: %s, using medium", idx, priority)
+                logger.warning("extract_actions_invalid_priority", version=version, index=idx, priority=priority)
                 priority = "medium"
             
             validated.append({
@@ -188,11 +202,12 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
                 "priority": priority
             })
         
-        logger.info("Extracted %d action items from JSON", len(validated))
+        latency = time.perf_counter() - start_time
+        logger.info("extract_actions_success", version=version, latency_seconds=round(latency, 3), count=len(validated))
         return validated
     
     except json.JSONDecodeError:
-        logger.warning("Action items response not valid JSON, falling back to regex parsing")
+        logger.warning("extract_actions_json_parse_failed", version=version)
         return _parse_action_items_text(response)
 
 

@@ -2,14 +2,17 @@ from ai_engine.state import MeetingState
 from ai_engine.preprocess import clean_text, chunk_text
 from ai_engine.llm import summarize_text, extract_action_items
 from ai_engine.validation import validate_summary, validate_action_items
-import logging
+import structlog
+import time
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("ai_engine.pipeline")
 
 MAX_LENGHTH = 3000
 
 def analyze_meeting(transcript: str) -> MeetingState:
-    logger.info("Starting meeting analysis pipeline.")
+    start_time = time.perf_counter()
+    logger.info("analyze_meeting_start", transcript_length=len(transcript))
+    
     state: MeetingState = {
         "transcript": transcript,
         "cleaned_text": "",
@@ -18,27 +21,37 @@ def analyze_meeting(transcript: str) -> MeetingState:
         "action_items": []
     }
 
-    # Preprocess the transcript
-    state["cleaned_text"] = clean_text(transcript)
-    logger.info("Transcript cleaned. Length: %d", len(state["cleaned_text"]))
+    try:
+        # Preprocess the transcript
+        preprocess_start = time.perf_counter()
+        state["cleaned_text"] = clean_text(transcript)
+        preprocess_duration = time.perf_counter() - preprocess_start
+        logger.info("preprocess_complete", duration_seconds=round(preprocess_duration, 3), cleaned_length=len(state["cleaned_text"]))
 
-    # Decide strategy
-    if len(state["cleaned_text"]) > MAX_LENGHTH:
-        logger.info("Transcript exceeds max length, chunking enabled.")
-        state["chunks"] = chunk_text(state["cleaned_text"])
-        combined = " ".join(state["chunks"])
-        summary = summarize_text(combined)
-    else:
-        summary = summarize_text(state["cleaned_text"])
-    logger.info("Summary generated.")
+        # Decide strategy
+        if len(state["cleaned_text"]) > MAX_LENGHTH:
+            chunk_start = time.perf_counter()
+            logger.info("chunking_enabled", max_length=MAX_LENGHTH)
+            state["chunks"] = chunk_text(state["cleaned_text"])
+            chunk_duration = time.perf_counter() - chunk_start
+            logger.info("chunking_complete", duration_seconds=round(chunk_duration, 3), chunk_count=len(state["chunks"]))
+            combined = " ".join(state["chunks"])
+            summary = summarize_text(combined)
+        else:
+            summary = summarize_text(state["cleaned_text"])
 
-    # Extract actions
-    actions = extract_action_items(state["cleaned_text"])
-    logger.info("Extracted %d action items.", len(actions))
+        # Extract actions
+        actions = extract_action_items(state["cleaned_text"])
 
-    # Validate outputs
-    state["summary"] = validate_summary(summary)
-    state["action_items"] = validate_action_items(actions)
+        # Validate outputs
+        state["summary"] = validate_summary(summary)
+        state["action_items"] = validate_action_items(actions)
 
-    logger.info("Meeting analysis pipeline completed.")
-    return state
+        total_duration = time.perf_counter() - start_time
+        logger.info("analyze_meeting_complete", duration_seconds=round(total_duration, 3), action_count=len(state["action_items"]), summary_length=len(state["summary"]))
+        return state
+    
+    except Exception:
+        total_duration = time.perf_counter() - start_time
+        logger.error("analyze_meeting_failed", duration_seconds=round(total_duration, 3))
+        raise

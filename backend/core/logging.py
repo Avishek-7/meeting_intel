@@ -1,5 +1,4 @@
 import logging
-import sys
 import structlog
 from structlog.stdlib import LoggerFactory
 from rich.logging import RichHandler

@@ -11,12 +11,12 @@ from core.cache_keys import meeting_cache_key
 from core.cache_invalidation import invalidate_meeting_cache
 from services.usage_service import track_ai_usage
 import json
-import logging
+import structlog
 import time
 import hashlib
 import uuid
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("services.meeting_service")
 redis_client = get_redis_client()
 
 CACHE_TTL_SECONDS = 60 * 10 # 10 minutes
@@ -39,79 +39,92 @@ async def process_meeting_transcript(
     Handles meeting transcript processing.
     Business logic lives here, not in routes.
     """
-    logger.info("Processing meeting transcript.")
+    start_time = time.perf_counter()
+    logger.info("process_meeting_start", transcript_length=len(transcript), user_id=user_id)
     
     # Validate user_id format early
     try:
         user_uuid = uuid.UUID(user_id)
     except (ValueError, TypeError) as e:
-        logger.warning(f"Invalid user_id format: {user_id}", exc_info=e)
+        logger.warning("invalid_user_id_format", user_id=user_id)
         raise ValidationError("Invalid user_id format.") from e
     
     # Business rule validation
     if len(transcript) < 10:
-        logger.warning("Transcript too short to process.")
+        logger.warning("transcript_too_short")
         raise ValidationError("Transcript is too short to process.")
 
     cache_key = meeting_cache_key(transcript)
 
     cached_result = None
+    cache_get_start = time.perf_counter()
     try:
         cached_result = redis_client.get(cache_key)
+        cache_get_duration = time.perf_counter() - cache_get_start
+        logger.info("cache_get_complete", duration_seconds=round(cache_get_duration, 3))
     except Exception as e:
-        logger.error(f"Redis GET failed for key: {cache_key}", exc_info=True)
+        cache_get_duration = time.perf_counter() - cache_get_start
+        logger.error("cache_get_failed", duration_seconds=round(cache_get_duration, 3))
 
     from_cache = False
     if cached_result:
-        logger.info(f"Cache HIT for key: {cache_key}")
+        logger.info("cache_hit")
         try:
             result = json.loads(cached_result)
         except (TypeError, ValueError) as e:
-            logger.error("Failed to decode cached AI response.", exc_info=e)
+            logger.error("cache_decode_failed")
             raise AIServiceError("Cached AI response is corrupted.") from e
 
         try:
             _validate_ai_result(result)
         except AIServiceError:
-            logger.error("Cached AI response failed validation.")
+            logger.error("cache_validation_failed")
             raise AIServiceError("Cached AI response is corrupted.")
         from_cache = True
 
     else:
-        logger.info(f"Cache MISS for key: {cache_key} calling AI engine.")
+        logger.info("cache_miss")
         ai_start = time.perf_counter()
         result = await run_in_threadpool(analyze_meeting, transcript)
         ai_duration = time.perf_counter() - ai_start
-        logger.info(f"AI processing complete in {ai_duration:.2f}s, caching result.")
+        logger.info("ai_analysis_complete", duration_seconds=round(ai_duration, 3))
         _validate_ai_result(result)
 
+        cache_set_start = time.perf_counter()
         try:
             redis_client.setex(
                 cache_key,
                 CACHE_TTL_SECONDS,
                 json.dumps(result)
             )
-            logger.info(f"Cached AI response with TTL {CACHE_TTL_SECONDS}s.")
+            cache_set_duration = time.perf_counter() - cache_set_start
+            logger.info("cache_set_complete", duration_seconds=round(cache_set_duration, 3), ttl_seconds=CACHE_TTL_SECONDS)
         except Exception as e:
-            logger.error(f"Redis SETEX failed for key: {cache_key}", exc_info=True)
+            cache_set_duration = time.perf_counter() - cache_set_start
+            logger.error("cache_set_failed", duration_seconds=round(cache_set_duration, 3))
     
     # Calculate transcript hash for deduplication
     transcript_hash = hashlib.sha256(transcript.encode('utf-8')).hexdigest()
     
-    logger.info("Checking for existing transcript in database.")
+    logger.info("checking_existing_meeting")
+    db_check_start = time.perf_counter()
     existing = await db.execute(
         select(Meeting.id).where(Meeting.transcript_hash == transcript_hash)
     )
+    db_check_duration = time.perf_counter() - db_check_start
+    logger.info("db_check_complete", duration_seconds=round(db_check_duration, 3))
+    
     existing_meeting_id = existing.scalar_one_or_none()
     if existing_meeting_id is not None:
-        logger.info("Meeting already persisted; returning cached summary and action items.")
+        logger.info("meeting_already_persisted")
         return MeetingResponse(
             summary=result["summary"],
             action_items=result["action_items"],
         )
 
     try:
-        logger.info("Persisting meeting data to database.")
+        logger.info("persisting_meeting_data")
+        db_write_start = time.perf_counter()
         async with db.begin():
             meeting = Meeting(
                 id=uuid.uuid4(),
@@ -137,27 +150,31 @@ async def process_meeting_transcript(
                         completion_tokens=usage_info.get("completion_tokens", 0)
                     )
                 except Exception as e:
-                    logger.warning("Failed to track AI usage, continuing anyway", exc_info=e)
-                    
-        logger.info("Meeting data persisted successfully.")
+                    logger.warning("track_usage_failed")
+        
+        db_write_duration = time.perf_counter() - db_write_start
+        logger.info("meeting_persisted", duration_seconds=round(db_write_duration, 3))
         invalidate_meeting_cache(transcript)
     except IntegrityError as e:
-        logger.warning("Concurrent insert detected; rolling back and fetching existing entry.", exc_info=e)
+        logger.warning("concurrent_insert_detected")
         await db.rollback()
         existing = await db.execute(
             select(Meeting.id).where(Meeting.transcript_hash == transcript_hash)
         )
         if existing.scalar_one_or_none() is not None:
-            logger.info("Concurrent insert resolved; returning result.")
+            logger.info("concurrent_insert_resolved")
             return MeetingResponse(
                 summary=result["summary"],
                 action_items=result["action_items"],
             )
         raise DatabaseError("Failed to persist meeting data.") from e
     except SQLAlchemyError as e:
-        logger.error("Database error while persisting meeting data.", exc_info=e)
+        logger.error("database_error_persist_meeting")
         raise DatabaseError("Failed to persist meeting data.") from e
 
+    total_duration = time.perf_counter() - start_time
+    logger.info("process_meeting_complete", duration_seconds=round(total_duration, 3), from_cache=from_cache)
+    
     return MeetingResponse(
         summary=result["summary"],
         action_items=result["action_items"],
