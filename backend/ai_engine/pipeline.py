@@ -7,7 +7,7 @@ import time
 
 logger = structlog.get_logger("ai_engine.pipeline")
 
-MAX_LENGHTH = 3000
+MAX_LENGTH = 3000
 
 def analyze_meeting(transcript: str) -> MeetingState:
     start_time = time.perf_counter()
@@ -29,14 +29,14 @@ def analyze_meeting(transcript: str) -> MeetingState:
         logger.info("preprocess_complete", duration_seconds=round(preprocess_duration, 3), cleaned_length=len(state["cleaned_text"]))
 
         # Decide strategy
-        if len(state["cleaned_text"]) > MAX_LENGHTH:
+        if len(state["cleaned_text"]) > MAX_LENGTH:
             chunk_start = time.perf_counter()
-            logger.info("chunking_enabled", max_length=MAX_LENGHTH)
+            logger.info("chunking_enabled", max_length=MAX_LENGTH)
             state["chunks"] = chunk_text(state["cleaned_text"])
             chunk_duration = time.perf_counter() - chunk_start
             logger.info("chunking_complete", duration_seconds=round(chunk_duration, 3), chunk_count=len(state["chunks"]))
-            combined = " ".join(state["chunks"])
-            summary = summarize_text(combined)
+            chunk_summaries = [summarize_text(chunk) for chunk in state["chunks"]]
+            summary = summarize_text(" ".join(chunk_summaries))
         else:
             summary = summarize_text(state["cleaned_text"])
 
@@ -48,7 +48,7 @@ def analyze_meeting(transcript: str) -> MeetingState:
         state["action_items"] = validate_action_items(actions)
 
         total_duration = time.perf_counter() - start_time
-        logger.info("analyze_meeting_complete", duration_seconds=round(total_duration, 3), action_count=len(state["action_items"]), summary_length=len(state["summary"]))
+        logger.info("analyze_meeting_complete", duration_seconds=round(total_duration, 3), action_count=len(state["action_items"]), summary_length=len(state["summary"] or ""))
         return state
     
     except Exception:

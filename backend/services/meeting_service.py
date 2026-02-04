@@ -64,7 +64,7 @@ async def process_meeting_transcript(
         logger.info("cache_get_complete", duration_seconds=round(cache_get_duration, 3))
     except Exception as e:
         cache_get_duration = time.perf_counter() - cache_get_start
-        logger.error("cache_get_failed", duration_seconds=round(cache_get_duration, 3))
+        logger.error("cache_get_failed", duration_seconds=round(cache_get_duration, 3), error=str(e))
 
     from_cache = False
     if cached_result:
@@ -72,14 +72,14 @@ async def process_meeting_transcript(
         try:
             result = json.loads(cached_result)
         except (TypeError, ValueError) as e:
-            logger.error("cache_decode_failed")
+            logger.error("cache_decode_failed", error=str(e))
             raise AIServiceError("Cached AI response is corrupted.") from e
 
         try:
             _validate_ai_result(result)
-        except AIServiceError:
+        except AIServiceError as e:
             logger.error("cache_validation_failed")
-            raise AIServiceError("Cached AI response is corrupted.")
+            raise AIServiceError("Cached AI response is corrupted.") from e
         from_cache = True
 
     else:
@@ -101,7 +101,7 @@ async def process_meeting_transcript(
             logger.info("cache_set_complete", duration_seconds=round(cache_set_duration, 3), ttl_seconds=CACHE_TTL_SECONDS)
         except Exception as e:
             cache_set_duration = time.perf_counter() - cache_set_start
-            logger.error("cache_set_failed", duration_seconds=round(cache_set_duration, 3))
+            logger.error("cache_set_failed", duration_seconds=round(cache_set_duration, 3), error=str(e))
     
     # Calculate transcript hash for deduplication
     transcript_hash = hashlib.sha256(transcript.encode('utf-8')).hexdigest()
@@ -150,7 +150,7 @@ async def process_meeting_transcript(
                         completion_tokens=usage_info.get("completion_tokens", 0)
                     )
                 except Exception as e:
-                    logger.warning("track_usage_failed")
+                    logger.warning("track_usage_failed", error=str(e))
         
         db_write_duration = time.perf_counter() - db_write_start
         logger.info("meeting_persisted", duration_seconds=round(db_write_duration, 3))
@@ -169,7 +169,7 @@ async def process_meeting_transcript(
             )
         raise DatabaseError("Failed to persist meeting data.") from e
     except SQLAlchemyError as e:
-        logger.error("database_error_persist_meeting")
+        logger.error("database_error_persist_meeting", error=str(e))
         raise DatabaseError("Failed to persist meeting data.") from e
 
     total_duration = time.perf_counter() - start_time

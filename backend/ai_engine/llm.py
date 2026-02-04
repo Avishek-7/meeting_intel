@@ -96,7 +96,7 @@ def generate_response(prompt: str) -> str:
             "llm_call_timeout",
             timeout_seconds=settings.OPENAI_REQUEST_TIMEOUT,
             latency_seconds=round(latency, 3),
-            retries=MAX_RETRIES,
+            max_retries=MAX_RETRIES,
         )
         raise AIServiceError("LLM request timed out. Request too complex or service slow.") from e
     except (APIError,) as e:
@@ -207,7 +207,8 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
         return validated
     
     except json.JSONDecodeError:
-        logger.warning("extract_actions_json_parse_failed", version=version)
+        latency = time.perf_counter() - start_time
+        logger.warning("extract_actions_json_parse_failed", version=version, latency_seconds=round(latency, 3))
         return _parse_action_items_text(response)
 
 
