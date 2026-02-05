@@ -140,6 +140,9 @@ async def process_meeting_transcript(
         await db.flush()
         await db.commit()
 
+        db_write_duration = time.perf_counter() - db_write_start
+        logger.info("meeting_persisted", duration_seconds=round(db_write_duration, 3))
+
         # Track AI usage if token info is available in result
         if "usage" in result and not from_cache:
             try:
@@ -155,8 +158,6 @@ async def process_meeting_transcript(
             except Exception as e:
                 logger.warning("track_usage_failed", error=str(e))
 
-        db_write_duration = time.perf_counter() - db_write_start
-        logger.info("meeting_persisted", duration_seconds=round(db_write_duration, 3))
         invalidate_meeting_cache(transcript)
     except IntegrityError as e:
         logger.warning("concurrent_insert_detected")
@@ -173,6 +174,7 @@ async def process_meeting_transcript(
         raise DatabaseError("Failed to persist meeting data.") from e
     except SQLAlchemyError as e:
         logger.error("database_error_persist_meeting", error=str(e))
+        await db.rollback()
         raise DatabaseError("Failed to persist meeting data.") from e
 
     total_duration = time.perf_counter() - start_time

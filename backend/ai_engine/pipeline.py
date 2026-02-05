@@ -46,7 +46,11 @@ def analyze_meeting(transcript: str) -> MeetingState:
             chunk_duration = time.perf_counter() - chunk_start
             logger.info("chunking_complete", duration_seconds=round(chunk_duration, 3), chunk_count=len(state["chunks"]))
             chunk_summaries = [summarize_text(chunk) for chunk in state["chunks"]]
-            summary = summarize_text(" ".join(chunk_summaries))
+            # summary = summarize_text(" ".join(chunk_summaries))
+            combined_summaries = " ".join(chunk_summaries)
+            if len(combined_summaries) > MAX_LENGTH:
+                logger.warning("combined_summaries_exceed_max", length=len(combined_summaries))
+            summary = summarize_text(combined_summaries)
         else:
             summary = summarize_text(state["cleaned_text"])
 

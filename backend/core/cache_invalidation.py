@@ -11,6 +11,10 @@ def invalidate_meeting_cache(transcript: str) -> None:
     cache_key = meeting_cache_key(transcript)
     
     if redis_client is None:
+        logger.warning(
+            "cache_invalidation_skipped",
+            extra={"cache_key": cache_key, "reason": "redis_client_unavailable"}
+        )
         return
 
     try:
