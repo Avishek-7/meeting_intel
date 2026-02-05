@@ -14,10 +14,14 @@ class Settings(BaseSettings):
 
     # OpenAI settings
     OPENAI_API_KEY: str
-    OPENAI_MODEL: str = "gpt-4-mini"
+
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_FALLBACK_MODEL: str = "gpt-3.5-turbo"
+
     OPENAI_TEMPERATURE: float = 0.3
     OPENAI_REQUEST_TIMEOUT: int = 30  # seconds
     OPENAI_MAX_TOKENS_PER_REQUEST: int = 2000
+    
     OPENAI_MAX_RETRIES: int = 3
     OPENAI_RETRY_BASE_WAIT: int = 2  # seconds
 

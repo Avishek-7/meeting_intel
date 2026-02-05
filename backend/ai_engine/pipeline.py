@@ -1,6 +1,6 @@
 from ai_engine.state import MeetingState
 from ai_engine.preprocess import clean_text, chunk_text
-from ai_engine.llm import summarize_text, extract_action_items
+from ai_engine.llm import summarize_text, extract_action_items, _usage_tracker
 from ai_engine.validation import validate_summary, validate_action_items
 import structlog
 import time
@@ -13,12 +13,22 @@ def analyze_meeting(transcript: str) -> MeetingState:
     start_time = time.perf_counter()
     logger.info("analyze_meeting_start", transcript_length=len(transcript))
     
+    # Initialize usage tracker for this analysis
+    usage_data = {
+        "model": "",
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    token = _usage_tracker.set(usage_data)
+    
     state: MeetingState = {
         "transcript": transcript,
         "cleaned_text": "",
         "chunks": [],
         "summary": None,
-        "action_items": []
+        "action_items": [],
+        "usage": usage_data
     }
 
     try:
@@ -49,9 +59,15 @@ def analyze_meeting(transcript: str) -> MeetingState:
 
         total_duration = time.perf_counter() - start_time
         logger.info("analyze_meeting_complete", duration_seconds=round(total_duration, 3), action_count=len(state["action_items"]), summary_length=len(state["summary"] or ""))
+        
+        # Log aggregated usage
+        logger.info("total_llm_usage", **usage_data)
+        
         return state
     
     except Exception:
         total_duration = time.perf_counter() - start_time
         logger.error("analyze_meeting_failed", duration_seconds=round(total_duration, 3))
         raise
+    finally:
+        _usage_tracker.reset(token)

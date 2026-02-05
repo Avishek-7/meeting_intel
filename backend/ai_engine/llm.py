@@ -12,8 +12,12 @@ import structlog
 import time
 import re
 import json
+from contextvars import ContextVar
 
 logger = structlog.get_logger("ai_engine.llm")
+
+# Track usage across multiple LLM calls in the same request
+_usage_tracker: ContextVar[dict] = ContextVar("usage_tracker", default=None)
 
 RETRY_ERRORS = (
     APIError,
@@ -32,6 +36,7 @@ SYSTEM_PROMPT = (
 )
 
 DEFAULT_MODEL = settings.OPENAI_MODEL
+FALLBACK_MODEL = settings.OPENAI_FALLBACK_MODEL
 DEFAULT_TEMPERATURE = settings.OPENAI_TEMPERATURE
 MAX_TOKENS = settings.OPENAI_MAX_TOKENS_PER_REQUEST
 MAX_RETRIES = settings.OPENAI_MAX_RETRIES
@@ -42,10 +47,11 @@ BASE_WAIT_SECONDS = settings.OPENAI_RETRY_BASE_WAIT
     stop=stop_after_attempt(MAX_RETRIES),
     wait=wait_exponential(multiplier=1, min=BASE_WAIT_SECONDS, max=10),
 )
-def _call_openai(prompt: str) -> str:
+def _call_openai(prompt: str) -> tuple[str, dict]:
     """Inner function with retry logic for transient errors.
     
     Includes timeout protection and token limits per request.
+    Returns (content, usage_dict).
     """
     response = client.chat.completions.create(
         model=DEFAULT_MODEL,
@@ -56,7 +62,24 @@ def _call_openai(prompt: str) -> str:
         temperature=DEFAULT_TEMPERATURE,
         max_tokens=MAX_TOKENS,
     )
-    return response.choices[0].message.content
+    
+    usage = {
+        "model": DEFAULT_MODEL,
+        "prompt_tokens": response.usage.prompt_tokens,
+        "completion_tokens": response.usage.completion_tokens,
+        "total_tokens": response.usage.total_tokens,
+    }
+    logger.info("llm_tokens", **usage)
+    
+    # Accumulate usage in context var if available
+    tracker = _usage_tracker.get()
+    if tracker is not None:
+        tracker["model"] = DEFAULT_MODEL
+        tracker["prompt_tokens"] = tracker.get("prompt_tokens", 0) + usage["prompt_tokens"]
+        tracker["completion_tokens"] = tracker.get("completion_tokens", 0) + usage["completion_tokens"]
+        tracker["total_tokens"] = tracker.get("total_tokens", 0) + usage["total_tokens"]
+    
+    return response.choices[0].message.content, usage
 
 def generate_response(prompt: str) -> str:
     """
@@ -65,14 +88,16 @@ def generate_response(prompt: str) -> str:
     This function is intentionally thin:
     - No business logic
     - No parsing
-    - No orchestration 
+    - No orchestration
+    
+    Usage is tracked via context variable and accumulated across calls.
     """
 
     logger.info("llm_call_start", model=DEFAULT_MODEL, prompt_length=len(prompt))
     start_time = time.perf_counter()
     
     try:
-        content = _call_openai(prompt)
+        content, _ = _call_openai(prompt)
         latency = time.perf_counter() - start_time
         logger.info("llm_call_success", model=DEFAULT_MODEL, latency_seconds=round(latency, 3))
         
@@ -165,9 +190,10 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
 }"""
     
     response = generate_response(prompt)
+    json_payload = _extract_json_payload(response)
 
     try:
-        data = json.loads(response)
+        data = json.loads(json_payload)
         items = data.get("action_items", [])
         
         if not isinstance(items, list):
@@ -210,6 +236,25 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
         latency = time.perf_counter() - start_time
         logger.warning("extract_actions_json_parse_failed", version=version, latency_seconds=round(latency, 3))
         return _parse_action_items_text(response)
+
+
+def _extract_json_payload(response: str) -> str:
+    """Extract a JSON object from an LLM response, handling code fences."""
+    if not response:
+        return "{}"
+
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", response, re.IGNORECASE)
+    if fenced:
+        candidate = fenced.group(1).strip()
+        if candidate:
+            return candidate
+
+    # Try to find the first JSON object in the response
+    obj_match = re.search(r"\{[\s\S]*\}", response)
+    if obj_match:
+        return obj_match.group(0).strip()
+
+    return response.strip()
 
 
 def _parse_action_items_text(response: str) -> list[dict]:

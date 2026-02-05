@@ -14,6 +14,10 @@ MODEL_PRICING = {
         "prompt": Decimal("30.00"),  # $30 per 1M prompt tokens
         "completion": Decimal("60.00")  # $60 per 1M completion tokens
     },
+    "gpt-4o-mini": {
+        "prompt": Decimal("0.150"),  # $0.15 per 1M prompt tokens
+        "completion": Decimal("0.600")  # $0.60 per 1M completion tokens
+    },
     "gpt-3.5-turbo": {
         "prompt": Decimal("0.50"),  # $0.50 per 1M prompt tokens
         "completion": Decimal("1.50")  # $1.50 per 1M completion tokens

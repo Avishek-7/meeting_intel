@@ -10,8 +10,14 @@ def invalidate_meeting_cache(transcript: str) -> None:
     """Invalidate the cache for a given meeting transcript."""
     cache_key = meeting_cache_key(transcript)
     
+    if redis_client is None:
+        return
+
     try:
         redis_client.delete(cache_key)
     except Exception as e:
-        logger.error(f"Failed to invalidate cache for key: {cache_key}", exc_info=True)
+        logger.warning(
+            "cache_invalidation_failed",
+            extra={"cache_key": cache_key, "error": str(e)}
+        )
 

@@ -58,13 +58,14 @@ async def process_meeting_transcript(
 
     cached_result = None
     cache_get_start = time.perf_counter()
-    try:
-        cached_result = redis_client.get(cache_key)
-        cache_get_duration = time.perf_counter() - cache_get_start
-        logger.info("cache_get_complete", duration_seconds=round(cache_get_duration, 3))
-    except Exception as e:
-        cache_get_duration = time.perf_counter() - cache_get_start
-        logger.error("cache_get_failed", duration_seconds=round(cache_get_duration, 3), error=str(e))
+    if redis_client is not None:
+        try:
+            cached_result = redis_client.get(cache_key)
+            cache_get_duration = time.perf_counter() - cache_get_start
+            logger.info("cache_get_complete", duration_seconds=round(cache_get_duration, 3))
+        except Exception as e:
+            cache_get_duration = time.perf_counter() - cache_get_start
+            logger.error("cache_get_failed", duration_seconds=round(cache_get_duration, 3), error=str(e))
 
     from_cache = False
     if cached_result:
@@ -90,18 +91,19 @@ async def process_meeting_transcript(
         logger.info("ai_analysis_complete", duration_seconds=round(ai_duration, 3))
         _validate_ai_result(result)
 
-        cache_set_start = time.perf_counter()
-        try:
-            redis_client.setex(
-                cache_key,
-                CACHE_TTL_SECONDS,
-                json.dumps(result)
-            )
-            cache_set_duration = time.perf_counter() - cache_set_start
-            logger.info("cache_set_complete", duration_seconds=round(cache_set_duration, 3), ttl_seconds=CACHE_TTL_SECONDS)
-        except Exception as e:
-            cache_set_duration = time.perf_counter() - cache_set_start
-            logger.error("cache_set_failed", duration_seconds=round(cache_set_duration, 3), error=str(e))
+        if redis_client is not None:
+            cache_set_start = time.perf_counter()
+            try:
+                redis_client.setex(
+                    cache_key,
+                    CACHE_TTL_SECONDS,
+                    json.dumps(result)
+                )
+                cache_set_duration = time.perf_counter() - cache_set_start
+                logger.info("cache_set_complete", duration_seconds=round(cache_set_duration, 3), ttl_seconds=CACHE_TTL_SECONDS)
+            except Exception as e:
+                cache_set_duration = time.perf_counter() - cache_set_start
+                logger.error("cache_set_failed", duration_seconds=round(cache_set_duration, 3), error=str(e))
     
     # Calculate transcript hash for deduplication
     transcript_hash = hashlib.sha256(transcript.encode('utf-8')).hexdigest()
@@ -125,33 +127,34 @@ async def process_meeting_transcript(
     try:
         logger.info("persisting_meeting_data")
         db_write_start = time.perf_counter()
-        async with db.begin():
-            meeting = Meeting(
-                id=uuid.uuid4(),
-                user_id=user_uuid,
-                transcript_text=transcript,
-                transcript_hash=transcript_hash,
-                summary_text=result["summary"],
-                action_items=result["action_items"]
-            )
-            db.add(meeting)
-            await db.flush()
-            
-            # Track AI usage if token info is available in result
-            if "usage" in result and not from_cache:
-                try:
-                    usage_info = result["usage"]
-                    await track_ai_usage(
-                        db=db,
-                        user_id=user_uuid,
-                        meeting_id=meeting.id,
-                        model_name=usage_info.get("model", "unknown"),
-                        prompt_tokens=usage_info.get("prompt_tokens", 0),
-                        completion_tokens=usage_info.get("completion_tokens", 0)
-                    )
-                except Exception as e:
-                    logger.warning("track_usage_failed", error=str(e))
-        
+
+        meeting = Meeting(
+            id=uuid.uuid4(),
+            user_id=user_uuid,
+            transcript_text=transcript,
+            transcript_hash=transcript_hash,
+            summary_text=result["summary"],
+            action_items=result["action_items"]
+        )
+        db.add(meeting)
+        await db.flush()
+        await db.commit()
+
+        # Track AI usage if token info is available in result
+        if "usage" in result and not from_cache:
+            try:
+                usage_info = result["usage"]
+                await track_ai_usage(
+                    db=db,
+                    user_id=user_uuid,
+                    meeting_id=meeting.id,
+                    model_name=usage_info.get("model", "unknown"),
+                    prompt_tokens=usage_info.get("prompt_tokens", 0),
+                    completion_tokens=usage_info.get("completion_tokens", 0)
+                )
+            except Exception as e:
+                logger.warning("track_usage_failed", error=str(e))
+
         db_write_duration = time.perf_counter() - db_write_start
         logger.info("meeting_persisted", duration_seconds=round(db_write_duration, 3))
         invalidate_meeting_cache(transcript)

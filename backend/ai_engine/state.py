@@ -1,4 +1,4 @@
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, NotRequired
 
 class MeetingState(TypedDict):
     transcript: str
@@ -6,4 +6,5 @@ class MeetingState(TypedDict):
     chunks: list[str]
     summary: Optional[str]
     action_items: list[str]
+    usage: NotRequired[dict]
     
