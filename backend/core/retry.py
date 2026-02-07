@@ -8,6 +8,9 @@ async def retry_async(
         retries: int = 3,
         delay: float = 1.0,
 ):
+    if retries < 1:
+        raise ValueError("Retries must be at least 1")
+    
     for attempt in range(1, retries + 1):
         try:
             return await func()
