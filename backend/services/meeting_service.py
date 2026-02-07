@@ -13,7 +13,7 @@ from services.usage_service import track_ai_usage
 import json
 import structlog
 import time
-import hashlib
+from jobs.meeting_analysis import generate_transcript_hash
 import uuid
 
 logger = structlog.get_logger("services.meeting_service")
@@ -106,7 +106,7 @@ async def process_meeting_transcript(
                 logger.error("cache_set_failed", duration_seconds=round(cache_set_duration, 3), error=str(e))
     
     # Calculate transcript hash for deduplication
-    transcript_hash = hashlib.sha256(transcript.encode('utf-8')).hexdigest()
+    transcript_hash = generate_transcript_hash(transcript)
     
     logger.info("checking_existing_meeting")
     db_check_start = time.perf_counter()
