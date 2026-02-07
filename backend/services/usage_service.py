@@ -3,10 +3,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from models.usage_record import UsageRecord
 from decimal import Decimal
 import uuid
-import logging
 import hashlib
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("services.usage_service")
 
 # Token pricing per 1M tokens (example rates - adjust based on your model)
 MODEL_PRICING = {
@@ -88,14 +88,20 @@ async def track_ai_usage(
         # Log with hashed user_id for privacy compliance (GDPR/CCPA)
         # Avoid logging raw user identifiers that could be linked to individuals
         user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
-        logger.debug(
-            f"Tracked AI usage: user_hash={user_hash}, meeting_id={meeting_id}, "
-            f"model={model_name}, tokens={total_tokens}, cost=${estimated_cost:.6f}"
+        logger.info(
+            "usage_tracked",
+            user_hash=user_hash,
+            meeting_id=str(meeting_id),
+            model_name=model_name,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            estimated_cost=str(estimated_cost),
         )
         
         return usage_record
         
     except SQLAlchemyError as e:
-        logger.error(f"Failed to track AI usage: {e}", exc_info=True)
+        logger.error("usage_track_failed", error=str(e), exc_info=True)
         await db.rollback()
         raise

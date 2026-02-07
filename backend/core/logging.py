@@ -22,6 +22,24 @@ def configure_logging() -> None:
         ],
     )
 
+    key_order = [
+        "timestamp",
+        "level",
+        "event",
+        "logger",
+        "correlation_id",
+        "method",
+        "path",
+        "user_id",
+        "user_hash",
+        "meeting_id",
+        "model_name",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "estimated_cost",
+    ]
+
     structlog.configure(
         logger_factory=LoggerFactory(),
         cache_logger_on_first_use=True,
@@ -34,7 +52,10 @@ def configure_logging() -> None:
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             timestamper,
-            structlog.dev.ConsoleRenderer(colors=False),
+            structlog.processors.KeyValueRenderer(
+                key_order=key_order,
+                drop_missing=True,
+            ),
         ],
     )
 

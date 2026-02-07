@@ -18,15 +18,16 @@ async def log_request_middleware(request: Request, call_next):
     )
     
     start_time = time.time()
+    status_code = 500
 
     try:
         response = await call_next(request)
         status_code = response.status_code
-        
+
         # Add correlation ID to response headers
         response.headers["X-Correlation-ID"] = correlation_id
-        return response 
-    
+        return response
+
     finally:
         duration = round(time.time() - start_time, 4)
         logger.info(

@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     celery_broker_url: Optional[str] = None
     celery_result_backend: Optional[str] = None
 
+    # Redis settings
+    redis_url: Optional[str] = None
+    redis_socket_timeout: float = 5
+    redis_socket_connect_timeout: float = 5
+
     class Config:
         # Load env from project root when running inside backend/
         env_file = str(Path(__file__).resolve().parent.parent.parent / ".env")
