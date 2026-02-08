@@ -123,7 +123,18 @@ async def enqueue_meeting_analysis(
     response_model=MeetingJobStatusResponse,
     status_code=status.HTTP_200_OK,
 )
-async def get_meeting_job_status(job_id: str):
+async def get_meeting_job_status(
+    job_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    username = current_user.get("username")
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User identification not available",
+        )
+
     if queue_redis_client is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -136,6 +147,15 @@ async def get_meeting_job_status(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job not found.",
+        )
+
+    email = current_user.get("email") or f"{username}@meetingintel.local"
+    user = await get_or_create_user_by_email(db, email)
+    job_user_id = job.meta.get("user_id") if job.meta else None
+    if not job_user_id or job_user_id != str(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this job.",
         )
 
     status_name = job.get_status()

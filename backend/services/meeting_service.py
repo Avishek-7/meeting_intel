@@ -31,7 +31,7 @@ def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
     try:
         uuid.UUID(user_id)
     except (ValueError, TypeError) as e:
-        logger.warning("invalid_user_id_format", user_id=user_id)
+        logger.warning("invalid_user_id_format")
         raise ValidationError("Invalid user_id format.") from e
 
     if len(transcript) < 10:
@@ -44,6 +44,12 @@ def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
         user_id,
         job_timeout=300,
     )
+    try:
+        job.meta["user_id"] = user_id
+        job.save_meta()
+    except Exception as e:
+        logger.warning("job_meta_save_failed", job_id=job.id, error=str(e))
+        raise AIServiceError("Failed to enqueue meeting analysis job.") from e
     logger.info("meeting_analysis_job_enqueued", job_id=job.id)
     return job.id
 

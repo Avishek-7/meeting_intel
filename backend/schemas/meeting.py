@@ -24,10 +24,10 @@ class MeetingRequest(BaseModel):
     title: Optional[str] = None
     transcript: str = Field(..., description="The transcript of the meeting", min_length=10)
 
-class MeetingResponse(BaseModel):
+class MeetingSummaryBase(BaseModel):
     summary: str = Field(..., min_length=1, description="Meeting summary")
     action_items: List[ActionItem] = Field(default_factory=list, description="Extracted action items")
-    
+
     @field_validator('summary')
     @classmethod
     def summary_not_empty(cls, v):
@@ -39,6 +39,15 @@ class MeetingJobResult(BaseModel):
     meeting_id: Optional[str] = None
     summary: str = Field(..., min_length=1, description="Meeting summary")
     action_items: List[ActionItem] = Field(default_factory=list, description="Extracted action items")
+
+    @field_validator('summary')
+    @classmethod
+    def summary_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Summary cannot be empty")
+        return v.strip()
+    meeting_id: Optional[str] = None
+
 
 class MeetingJobEnqueueResponse(BaseModel):
     job_id: str

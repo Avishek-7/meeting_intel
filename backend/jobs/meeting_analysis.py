@@ -12,12 +12,28 @@ logger = structlog.get_logger("jobs.meeting_analysis")
 
 async def run_meeting_analysis_job(transcript: str, user_id: str, db: AsyncSession):
     logger.info("meeting_analysis_job_started", transcript_length=len(transcript))
-    response = await process_meeting_transcript(transcript=transcript, db=db, user_id=user_id)
     transcript_hash = generate_transcript_hash(transcript)
     existing = await db.execute(
+        select(Meeting).where(Meeting.transcript_hash == transcript_hash)
+    )
+    existing_meeting = existing.scalar_one_or_none()
+
+    if existing_meeting is not None:
+        logger.info(
+            "meeting_analysis_job_skipped_duplicate",
+            meeting_id=str(existing_meeting.id),
+        )
+        return {
+            "meeting_id": str(existing_meeting.id),
+            "summary": existing_meeting.summary_text,
+            "action_items": existing_meeting.action_items,
+        }
+
+    response = await process_meeting_transcript(transcript=transcript, db=db, user_id=user_id)
+    created = await db.execute(
         select(Meeting.id).where(Meeting.transcript_hash == transcript_hash)
     )
-    meeting_id = existing.scalar_one_or_none()
+    meeting_id = created.scalar_one_or_none()
 
     logger.info(
         "meeting_analysis_job_complete",
@@ -40,5 +56,7 @@ def run_meeting_analysis_job_sync(transcript: str, user_id: str):
                     db=db,
                 )
             )
-    logger.info("meeting_analysis_job_enqueued")
-    return asyncio.run(_run())
+    logger.info("meeting_analysis_job_sync_started")
+    result = asyncio.run(_run())
+    logger.info("meeting_analysis_job_sync_completed")
+    return result
