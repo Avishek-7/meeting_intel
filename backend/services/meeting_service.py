@@ -10,16 +10,42 @@ from core.cache import get_redis_client
 from core.cache_keys import meeting_cache_key
 from core.cache_invalidation import invalidate_meeting_cache
 from services.usage_service import track_ai_usage
+from core.queue import default_queue
 import json
 import structlog
 import time
-from jobs.meeting_analysis import generate_transcript_hash
+from core.transcript import generate_transcript_hash
 import uuid
 
 logger = structlog.get_logger("services.meeting_service")
 redis_client = get_redis_client()
 
 CACHE_TTL_SECONDS = 60 * 10 # 10 minutes
+
+def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
+    if default_queue is None:
+        logger.error("queue_unavailable")
+        raise AIServiceError("Background queue is not available.")
+
+    # Validate user_id format early
+    try:
+        uuid.UUID(user_id)
+    except (ValueError, TypeError) as e:
+        logger.warning("invalid_user_id_format", user_id=user_id)
+        raise ValidationError("Invalid user_id format.") from e
+
+    if len(transcript) < 10:
+        logger.warning("transcript_too_short")
+        raise ValidationError("Transcript is too short to process.")
+
+    job = default_queue.enqueue(
+        "jobs.meeting_analysis.run_meeting_analysis_job_sync",
+        transcript,
+        user_id,
+        job_timeout=300,
+    )
+    logger.info("meeting_analysis_job_enqueued", job_id=job.id)
+    return job.id
 
 def _validate_ai_result(result: dict) -> None:
     if not isinstance(result, dict):

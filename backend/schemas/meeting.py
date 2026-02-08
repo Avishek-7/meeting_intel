@@ -34,3 +34,18 @@ class MeetingResponse(BaseModel):
         if not v or not v.strip():
             raise ValueError("Summary cannot be empty")
         return v.strip()
+
+class MeetingJobResult(BaseModel):
+    meeting_id: Optional[str] = None
+    summary: str = Field(..., min_length=1, description="Meeting summary")
+    action_items: List[ActionItem] = Field(default_factory=list, description="Extracted action items")
+
+class MeetingJobEnqueueResponse(BaseModel):
+    job_id: str
+    status: str = Field(default="queued")
+
+class MeetingJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    result: Optional[MeetingJobResult] = None
+    error: Optional[str] = None
