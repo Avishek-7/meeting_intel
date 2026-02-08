@@ -49,7 +49,12 @@ def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
         job.save_meta()
     except Exception as e:
         logger.warning("job_meta_save_failed", job_id=job.id, error=str(e))
-        raise AIServiceError("Failed to enqueue meeting analysis job.") from e
+        # Meta is non-critical; user_id is already in job args
+        try:
+            job.cancel()
+        except Exception:
+            logger.error("job_cancel_failed", job_id=job.id)
+    raise AIServiceError("Failed to enqueue meeting analysis job.") from e
     logger.info("meeting_analysis_job_enqueued", job_id=job.id)
     return job.id
 

@@ -154,8 +154,8 @@ async def get_meeting_job_status(
     job_user_id = job.meta.get("user_id") if job.meta else None
     if not job_user_id or job_user_id != str(user.id):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this job.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found.",
         )
 
     status_name = job.get_status()

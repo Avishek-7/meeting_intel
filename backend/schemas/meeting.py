@@ -46,7 +46,7 @@ class MeetingJobResult(BaseModel):
         if not v or not v.strip():
             raise ValueError("Summary cannot be empty")
         return v.strip()
-    meeting_id: Optional[str] = None
+
 
 
 class MeetingJobEnqueueResponse(BaseModel):

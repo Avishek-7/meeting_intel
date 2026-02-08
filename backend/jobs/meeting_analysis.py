@@ -26,7 +26,7 @@ async def run_meeting_analysis_job(transcript: str, user_id: str, db: AsyncSessi
         return {
             "meeting_id": str(existing_meeting.id),
             "summary": existing_meeting.summary_text,
-            "action_items": existing_meeting.action_items,
+            "action_items": [item.model_dump() for item in existing_meeting.action_items] if existing_meeting.action_items else [],
         }
 
     response = await process_meeting_transcript(transcript=transcript, db=db, user_id=user_id)
@@ -37,13 +37,13 @@ async def run_meeting_analysis_job(transcript: str, user_id: str, db: AsyncSessi
 
     logger.info(
         "meeting_analysis_job_complete",
-        action_count=len(response.action_items),
+        action_count=len(response.action_items) if response.action_items else 0,
         meeting_id=str(meeting_id) if meeting_id else None,
     )
     return {
         "meeting_id": str(meeting_id) if meeting_id else None,
         "summary": response.summary,
-        "action_items": [item.model_dump() for item in response.action_items],
+        "action_items": [item.model_dump() for item in response.action_items] if response.action_items else [],
     }
 
 def run_meeting_analysis_job_sync(transcript: str, user_id: str):
