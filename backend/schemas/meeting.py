@@ -35,17 +35,11 @@ class MeetingSummaryBase(BaseModel):
             raise ValueError("Summary cannot be empty")
         return v.strip()
 
-class MeetingJobResult(BaseModel):
-    meeting_id: Optional[str] = None
-    summary: str = Field(..., min_length=1, description="Meeting summary")
-    action_items: List[ActionItem] = Field(default_factory=list, description="Extracted action items")
+class MeetingResponse(MeetingSummaryBase):
+    pass
 
-    @field_validator('summary')
-    @classmethod
-    def summary_not_empty(cls, v):
-        if not v or not v.strip():
-            raise ValueError("Summary cannot be empty")
-        return v.strip()
+class MeetingJobResult(MeetingSummaryBase):
+    meeting_id: Optional[str] = None
 
 
 
