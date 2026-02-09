@@ -4,8 +4,10 @@ from schemas.meeting import MeetingResponse
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
-from sqlalchemy import select
+from sqlalchemy import select, func, and_
+from typing import Tuple, Dict
 from models.meeting import Meeting
+from models.usage_record import UsageRecord
 from core.cache import get_redis_client
 from core.cache_keys import meeting_cache_key
 from core.cache_invalidation import invalidate_meeting_cache
@@ -222,3 +224,135 @@ async def process_meeting_transcript(
     )
 
 
+async def get_user_meetings(
+    db: AsyncSession,
+    user_id: str,
+    limit: int = 50,
+    offset: int = 0
+) -> Tuple[list, int]:
+    """
+    Get paginated list of user's meetings with metadata.
+    
+    Args:
+        db: Database session
+        user_id: UUID of the user
+        limit: Number of results per page
+        offset: Pagination offset
+    
+    Returns:
+        Tuple of (meetings_metadata_list, total_count)
+    """
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except (ValueError, TypeError) as e:
+        logger.warning("invalid_user_id_format_history", user_id=user_id)
+        raise ValidationError("Invalid user_id format.") from e
+    
+    try:
+        # Get total count
+        count_result = await db.execute(
+            select(func.count(Meeting.id)).where(Meeting.user_id == user_uuid)
+        )
+        total_count = count_result.scalar() or 0
+        
+        # Get paginated meetings
+        result = await db.execute(
+            select(Meeting).where(Meeting.user_id == user_uuid)
+            .order_by(Meeting.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        
+        meetings = result.scalars().all()
+        meetings_data = []
+        
+        for meeting in meetings:
+            # Get usage info for this meeting
+            usage_result = await db.execute(
+                select(func.sum(UsageRecord.total_tokens), func.sum(UsageRecord.estimated_cost)).where(
+                    UsageRecord.meeting_id == meeting.id
+                )
+            )
+            tokens, cost = usage_result.first()
+            
+            # Create preview (first 200 chars of summary)
+            summary_preview = meeting.summary_text[:200] if meeting.summary_text else ""
+            
+            action_count = len(meeting.action_items) if isinstance(meeting.action_items, list) else 0
+            
+            meetings_data.append({
+                "id": str(meeting.id),
+                "created_at": meeting.created_at,
+                "summary_preview": summary_preview,
+                "action_count": action_count,
+                "total_tokens": tokens or 0,
+                "estimated_cost": cost or 0
+            })
+        
+        logger.info("user_meetings_retrieved", user_id=str(user_uuid)[:8], count=len(meetings_data))
+        return meetings_data, total_count
+        
+    except Exception as e:
+        logger.error("get_user_meetings_failed", error=str(e))
+        raise DatabaseError("Failed to retrieve user meetings.") from e
+
+
+async def get_meeting_detail(
+    db: AsyncSession,
+    user_id: str,
+    meeting_id: str
+) -> Dict:
+    """
+    Get full details of a meeting (with authorization check).
+    
+    Args:
+        db: Database session
+        user_id: UUID of the user (for authorization)
+        meeting_id: UUID of the meeting
+    
+    Returns:
+        Meeting detail dict with summary, action items, usage info
+    """
+    try:
+        user_uuid = uuid.UUID(user_id)
+        meeting_uuid = uuid.UUID(meeting_id)
+    except (ValueError, TypeError) as e:
+        logger.warning("invalid_uuid_format_detail")
+        raise ValidationError("Invalid UUID format.") from e
+    
+    try:
+        result = await db.execute(
+            select(Meeting).where(
+                and_(
+                    Meeting.id == meeting_uuid,
+                    Meeting.user_id == user_uuid
+                )
+            )
+        )
+        
+        meeting = result.scalar_one_or_none()
+        if meeting is None:
+            logger.warning("meeting_not_found", meeting_id=str(meeting_uuid)[:8], user_id=str(user_uuid)[:8])
+            raise ValueError("Meeting not found or access denied.")
+        
+        # Get usage info
+        usage_result = await db.execute(
+            select(UsageRecord).where(UsageRecord.meeting_id == meeting.id)
+        )
+        usage_record = usage_result.scalar_one_or_none()
+        
+        return {
+            "id": str(meeting.id),
+            "created_at": meeting.created_at,
+            "summary": meeting.summary_text,
+            "action_items": meeting.action_items or [],
+            "total_tokens": usage_record.total_tokens if usage_record else 0,
+            "estimated_cost": usage_record.estimated_cost if usage_record else 0,
+            "model_name": usage_record.model_name if usage_record else None,
+            "prompt_tokens": usage_record.prompt_tokens if usage_record else 0,
+            "completion_tokens": usage_record.completion_tokens if usage_record else 0
+        }
+        
+    except Exception as e:
+        logger.error("get_meeting_detail_failed", error=str(e))
+        raise DatabaseError("Failed to retrieve meeting details.") from e

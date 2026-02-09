@@ -1,12 +1,7 @@
 from openai import OpenAI, RateLimitError, APIError, APITimeoutError, AuthenticationError
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-)
 from core.config import settings
 from core.exceptions import AIServiceError
+from core.retry import with_exponential_backoff
 from ai_engine.prompts.loader import load_prompt
 import structlog
 import time
@@ -18,12 +13,6 @@ logger = structlog.get_logger("ai_engine.llm")
 
 # Track usage across multiple LLM calls in the same request
 _usage_tracker: ContextVar[dict] = ContextVar("usage_tracker", default=None)
-
-RETRY_ERRORS = (
-    APIError,
-    RateLimitError,
-    APITimeoutError,
-)
 
 client = OpenAI(
     api_key=settings.OPENAI_API_KEY,
@@ -42,11 +31,14 @@ MAX_TOKENS = settings.OPENAI_MAX_TOKENS_PER_REQUEST
 MAX_RETRIES = settings.OPENAI_MAX_RETRIES
 BASE_WAIT_SECONDS = settings.OPENAI_RETRY_BASE_WAIT
 
-@retry(
-    retry=retry_if_exception_type(RETRY_ERRORS),
-    stop=stop_after_attempt(MAX_RETRIES),
-    wait=wait_exponential(multiplier=1, min=BASE_WAIT_SECONDS, max=10),
+# Create retry decorator for OpenAI calls with exponential backoff
+_retry_openai = with_exponential_backoff(
+    exception_types=(APIError, RateLimitError, APITimeoutError),
+    max_retries=MAX_RETRIES,
+    base_wait_seconds=BASE_WAIT_SECONDS,
 )
+
+@_retry_openai
 def _call_openai(prompt: str) -> tuple[str, dict]:
     """Inner function with retry logic for transient errors.
     

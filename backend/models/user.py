@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import DateTime
 from sqlalchemy.dialects.postgresql import UUID
@@ -12,3 +13,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=True, index=True)
     
     created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    meetings = relationship("Meeting", back_populates="user", cascade="all, delete-orphan")
+    usage_records = relationship("UsageRecord", back_populates="user", cascade="all, delete-orphan")

@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Numeric
+from sqlalchemy import Column, String, Integer, ForeignKey, Numeric, Index
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import DateTime
 from sqlalchemy.dialects.postgresql import UUID
@@ -19,3 +20,13 @@ class UsageRecord(Base):
     estimated_cost = Column(Numeric(10, 6), nullable=False)
     
     created_at = Column(DateTime, server_default=func.now(), index=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="usage_records")
+    meeting = relationship("Meeting", back_populates="usage_records")
+    
+    # Indices for analytics queries
+    __table_args__ = (
+        Index("idx_usage_user_created", "user_id", "created_at"),
+        Index("idx_usage_created", "created_at"),
+    )
