@@ -11,6 +11,7 @@ class User(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=True, index=True)
+    role = Column(String(50), nullable=True, default="user", server_default="user")
     
     created_at = Column(DateTime, server_default=func.now())
     

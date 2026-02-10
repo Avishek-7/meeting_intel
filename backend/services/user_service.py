@@ -82,3 +82,23 @@ async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     except SQLAlchemyError as e:
         logger.error("Database error retrieving user", exc_info=True)  # Don't log PII (user_id)
         raise DatabaseError("Failed to retrieve user") from e
+
+async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
+    """
+    Get user by email.
+    
+    Args:
+        db: Database session
+        email: User email address
+    
+    Returns:
+        User object or None if not found
+    """
+    try:
+        result = await db.execute(
+            select(User).where(User.email == email)
+        )
+        return result.scalar_one_or_none()
+    except SQLAlchemyError as e:
+        logger.error("Database error retrieving user", exc_info=True)  # Don't log PII (email)
+        raise DatabaseError("Failed to retrieve user") from e
