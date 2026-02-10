@@ -10,6 +10,11 @@ GDPR/CCPA Compliance:
 import hashlib
 from typing import Union
 import uuid
+import os
+
+# Load from environment/secrets manager in production
+# This pepper prevents enumeration attacks on the hashed identifiers
+_HASH_PEPPER = os.environ.get("PII_HASH_PEPPER", "")
 
 
 def hash_user_id(user_id: Union[str, uuid.UUID]) -> str:
@@ -19,20 +24,24 @@ def hash_user_id(user_id: Union[str, uuid.UUID]) -> str:
     This hash:
     - Cannot be reversed to get the original user_id
     - Is consistent for the same user (for log correlation)
-    - Is short (8 chars) to reduce log verbosity
+    - Is short (12 chars) to reduce log verbosity while minimizing collision risk
+    - Uses application secret (pepper) to prevent enumeration attacks
+    
+    Note: 12 hex chars = 48 bits, giving ~50% collision probability at ~16M users.
+    Set PII_HASH_PEPPER environment variable in production.
     
     Args:
         user_id: User UUID (string or UUID object)
     
     Returns:
-        8-character hash string for logging
+        12-character hash string for logging
     
     Example:
         >>> hash_user_id("123e4567-e89b-12d3-a456-426614174000")
-        'a1b2c3d4'
+        'a1b2c3d4e5f6'
     """
     user_id_str = str(user_id)
-    return hashlib.sha256(user_id_str.encode()).hexdigest()[:8]
+    return hashlib.sha256((_HASH_PEPPER + user_id_str).encode()).hexdigest()[:12]
 
 
 def hash_meeting_id(meeting_id: Union[str, uuid.UUID]) -> str:
@@ -41,12 +50,13 @@ def hash_meeting_id(meeting_id: Union[str, uuid.UUID]) -> str:
     
     While meeting IDs are less sensitive than user IDs,
     consistent hashing allows for correlation without exposing full UUIDs.
+    Uses application secret (pepper) to prevent enumeration attacks.
     
     Args:
         meeting_id: Meeting UUID (string or UUID object)
     
     Returns:
-        8-character hash string for logging
+        12-character hash string for logging
     """
     meeting_id_str = str(meeting_id)
-    return hashlib.sha256(meeting_id_str.encode()).hexdigest()[:8]
+    return hashlib.sha256((_HASH_PEPPER + meeting_id_str).encode()).hexdigest()[:12]

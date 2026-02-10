@@ -32,7 +32,7 @@ def mask_db_url(db_url: str) -> str:
         return db_url
     except Exception:
         # If parsing fails, return safe fallback
-        return f"{parsed.scheme}://{parsed.hostname}" if parsed else "***"
+        return "***"
 
 
 def apply_migrations():

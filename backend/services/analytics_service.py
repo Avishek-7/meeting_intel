@@ -304,8 +304,6 @@ async def get_user_top_expensive_meetings(
     except Exception as e:
         logger.error("top_expensive_meetings_failed", error=str(e))
         raise
-        raise
-
 
 def parse_date_range(from_param: str = None, to_param: str = None, preset: str = None) -> Tuple[datetime, datetime]:
     """
@@ -330,11 +328,11 @@ def parse_date_range(from_param: str = None, to_param: str = None, preset: str =
             return date_from, date_to
         except ValueError:
             logger.warning("invalid_data_format", from_param=from_param, to_param=to_param)
+        except ValueError:
+            logger.warning("invalid_data_format", from_param=from_param, to_param=to_param)
     
-        # Use preset
+    # Use preset
     if preset == "today":
-        return today, tomorrow
-    elif preset == "7d":
         return today - timedelta(days=7), tomorrow
     elif preset == "30d":
         return today - timedelta(days=30), tomorrow
