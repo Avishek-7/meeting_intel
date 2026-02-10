@@ -30,8 +30,7 @@ def configure_logging() -> None:
         "correlation_id",
         "method",
         "path",
-        "user_id",
-        "user_hash",
+        "user_hash",  # Anonymized user identifier (never log raw user_id)
         "meeting_id",
         "model_name",
         "prompt_tokens",

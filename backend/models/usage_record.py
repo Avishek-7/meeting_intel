@@ -28,5 +28,4 @@ class UsageRecord(Base):
     # Indices for analytics queries
     __table_args__ = (
         Index("idx_usage_user_created", "user_id", "created_at"),
-        Index("idx_usage_created", "created_at"),
     )

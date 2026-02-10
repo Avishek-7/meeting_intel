@@ -2,8 +2,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 from models.usage_record import UsageRecord
 from decimal import Decimal
+from core.privacy import hash_user_id, hash_meeting_id
 import uuid
-import hashlib
 import structlog
 
 logger = structlog.get_logger("services.usage_service")
@@ -85,13 +85,12 @@ async def track_ai_usage(
         await db.commit()
         await db.refresh(usage_record)
         
-        # Log with hashed user_id for privacy compliance (GDPR/CCPA)
-        # Avoid logging raw user identifiers that could be linked to individuals
-        user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
+        # Log with hashed identifiers for privacy compliance (GDPR/CCPA)
+        # Avoid logging raw identifiers that could be linked to individuals
         logger.info(
             "usage_tracked",
-            user_hash=user_hash,
-            meeting_id=str(meeting_id),
+            user_hash=hash_user_id(user_id),
+            meeting_hash=hash_meeting_id(meeting_id),
             model_name=model_name,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,

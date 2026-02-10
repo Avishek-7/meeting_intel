@@ -1,4 +1,4 @@
-from core.exceptions import ValidationError, AIServiceError, DatabaseError
+from core.exceptions import ValidationError, AIServiceError, DatabaseError, NotFoundError
 from ai_engine.pipeline import analyze_meeting
 from schemas.meeting import MeetingResponse
 from starlette.concurrency import run_in_threadpool
@@ -13,6 +13,7 @@ from core.cache_keys import meeting_cache_key
 from core.cache_invalidation import invalidate_meeting_cache
 from services.usage_service import track_ai_usage
 from core.queue import default_queue
+from core.privacy import hash_user_id, hash_meeting_id
 import json
 import structlog
 import time
@@ -25,6 +26,21 @@ redis_client = get_redis_client()
 CACHE_TTL_SECONDS = 60 * 10 # 10 minutes
 
 def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
+    """
+    Enqueue a meeting analysis job for async processing.
+    
+    Args:
+        transcript: Meeting transcript text
+        user_id: User UUID string
+        
+    Returns:
+        Job ID string
+        
+    Note:
+        user_id is passed both as a function argument (primary) and in job metadata
+        (for monitoring/debugging). The function argument ensures the job has all
+        required data even if metadata operations fail.
+    """
     if default_queue is None:
         logger.error("queue_unavailable")
         raise AIServiceError("Background queue is not available.")
@@ -33,31 +49,28 @@ def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
     try:
         uuid.UUID(user_id)
     except (ValueError, TypeError) as e:
-        logger.warning("invalid_user_id_format")
+        logger.warning("invalid_user_id_format_enqueue")  # Don't log PII
         raise ValidationError("Invalid user_id format.") from e
 
     if len(transcript) < 10:
         logger.warning("transcript_too_short")
         raise ValidationError("Transcript is too short to process.")
 
-    job = default_queue.enqueue(
-        "jobs.meeting_analysis.run_meeting_analysis_job_sync",
-        transcript,
-        user_id,
-        job_timeout=300,
-    )
+    # Enqueue with metadata set atomically to avoid race condition
+    # user_id is passed as both function argument (critical) and metadata (supplementary)
     try:
-        job.meta["user_id"] = user_id
-        job.save_meta()
+        job = default_queue.enqueue(
+            "jobs.meeting_analysis.run_meeting_analysis_job_sync",
+            transcript,
+            user_id,
+            job_timeout=300,
+            meta={"user_id": user_id}  # Set metadata atomically during enqueue
+        )
+        logger.info("meeting_analysis_job_enqueued", job_id=job.id)
+        return job.id
     except Exception as e:
-        logger.warning("job_meta_save_failed", job_id=job.id, error=str(e))
-        try:
-            job.cancel()
-        except Exception:
-            logger.error("job_cancel_failed", job_id=job.id)
+        logger.error("job_enqueue_failed", error=str(e))
         raise AIServiceError("Failed to enqueue meeting analysis job.") from e
-    logger.info("meeting_analysis_job_enqueued", job_id=job.id)
-    return job.id
 
 def _validate_ai_result(result: dict) -> None:
     if not isinstance(result, dict):
@@ -78,20 +91,48 @@ async def process_meeting_transcript(
     Business logic lives here, not in routes.
     """
     start_time = time.perf_counter()
-    logger.info("process_meeting_start", transcript_length=len(transcript), user_id=user_id)
     
     # Validate user_id format early
     try:
         user_uuid = uuid.UUID(user_id)
     except (ValueError, TypeError) as e:
-        logger.warning("invalid_user_id_format", user_id=user_id)
+        logger.warning("invalid_user_id_format")  # Don't log PII
         raise ValidationError("Invalid user_id format.") from e
+    
+    logger.info("process_meeting_start", transcript_length=len(transcript), user_hash=hash_user_id(user_uuid))
     
     # Business rule validation
     if len(transcript) < 10:
         logger.warning("transcript_too_short")
         raise ValidationError("Transcript is too short to process.")
 
+    # Calculate transcript hash for deduplication
+    transcript_hash = generate_transcript_hash(transcript)
+    
+    # Check database FIRST to avoid unnecessary AI processing
+    logger.info("checking_existing_meeting")
+    db_check_start = time.perf_counter()
+    existing = await db.execute(
+        select(Meeting).where(
+            Meeting.transcript_hash == transcript_hash,
+            Meeting.user_id == user_uuid
+        )
+    )
+    existing_meeting = existing.scalar_one_or_none()
+    db_check_duration = time.perf_counter() - db_check_start
+    logger.info("db_check_complete", duration_seconds=round(db_check_duration, 3))
+    
+    if existing_meeting is not None:
+        logger.info("meeting_already_persisted", meeting_hash=hash_meeting_id(existing_meeting.id))
+        total_duration = time.perf_counter() - start_time
+        logger.info("process_meeting_complete", duration_seconds=round(total_duration, 3), from_cache=True, from_db=True)
+        # Return existing database record to avoid AI processing
+        return MeetingResponse(
+            summary=existing_meeting.summary_text,
+            action_items=existing_meeting.action_items or [],
+        )
+
+    # Meeting doesn't exist - proceed with AI processing
     cache_key = meeting_cache_key(transcript)
 
     cached_result = None
@@ -143,25 +184,7 @@ async def process_meeting_transcript(
                 cache_set_duration = time.perf_counter() - cache_set_start
                 logger.error("cache_set_failed", duration_seconds=round(cache_set_duration, 3), error=str(e))
     
-    # Calculate transcript hash for deduplication
-    transcript_hash = generate_transcript_hash(transcript)
-    
-    logger.info("checking_existing_meeting")
-    db_check_start = time.perf_counter()
-    existing = await db.execute(
-        select(Meeting.id).where(Meeting.transcript_hash == transcript_hash)
-    )
-    db_check_duration = time.perf_counter() - db_check_start
-    logger.info("db_check_complete", duration_seconds=round(db_check_duration, 3))
-    
-    existing_meeting_id = existing.scalar_one_or_none()
-    if existing_meeting_id is not None:
-        logger.info("meeting_already_persisted")
-        return MeetingResponse(
-            summary=result["summary"],
-            action_items=result["action_items"],
-        )
-
+    # Meeting doesn't exist in DB - proceed to persist
     try:
         logger.info("persisting_meeting_data")
         db_write_start = time.perf_counter()
@@ -200,14 +223,20 @@ async def process_meeting_transcript(
     except IntegrityError as e:
         logger.warning("concurrent_insert_detected")
         await db.rollback()
+        # Fetch the existing meeting that was inserted concurrently
         existing = await db.execute(
-            select(Meeting.id).where(Meeting.transcript_hash == transcript_hash)
+            select(Meeting).where(
+                Meeting.transcript_hash == transcript_hash,
+                Meeting.user_id == user_uuid
+            )
         )
-        if existing.scalar_one_or_none() is not None:
-            logger.info("concurrent_insert_resolved")
+        existing_meeting = existing.scalar_one_or_none()
+        if existing_meeting is not None:
+            logger.info("concurrent_insert_resolved", meeting_hash=hash_meeting_id(existing_meeting.id))
+            # Return the database record for consistency
             return MeetingResponse(
-                summary=result["summary"],
-                action_items=result["action_items"],
+                summary=existing_meeting.summary_text,
+                action_items=existing_meeting.action_items or [],
             )
         raise DatabaseError("Failed to persist meeting data.") from e
     except SQLAlchemyError as e:
@@ -245,10 +274,12 @@ async def get_user_meetings(
     try:
         user_uuid = uuid.UUID(user_id)
     except (ValueError, TypeError) as e:
-        logger.warning("invalid_user_id_format_history", user_id=user_id)
+        logger.warning("invalid_user_id_format_history")  # Don't log PII
         raise ValidationError("Invalid user_id format.") from e
     
     try:
+        start_time = time.perf_counter()
+        
         # Get total count
         count_result = await db.execute(
             select(func.count(Meeting.id)).where(Meeting.user_id == user_uuid)
@@ -266,14 +297,27 @@ async def get_user_meetings(
         meetings = result.scalars().all()
         meetings_data = []
         
-        for meeting in meetings:
-            # Get usage info for this meeting
+        # Fetch all usage data in one query to avoid N+1 problem
+        meeting_ids = [m.id for m in meetings]
+        usage_map = {}
+        
+        if meeting_ids:
+            usage_start = time.perf_counter()
             usage_result = await db.execute(
-                select(func.sum(UsageRecord.total_tokens), func.sum(UsageRecord.estimated_cost)).where(
-                    UsageRecord.meeting_id == meeting.id
-                )
+                select(
+                    UsageRecord.meeting_id,
+                    func.sum(UsageRecord.total_tokens).label('tokens'),
+                    func.sum(UsageRecord.estimated_cost).label('cost')
+                ).where(UsageRecord.meeting_id.in_(meeting_ids))
+                .group_by(UsageRecord.meeting_id)
             )
-            tokens, cost = usage_result.first()
+            usage_map = {row.meeting_id: (row.tokens, row.cost) for row in usage_result}
+            usage_duration = time.perf_counter() - usage_start
+            logger.info("usage_batch_fetch_complete", duration_seconds=round(usage_duration, 3), meeting_count=len(meeting_ids))
+        
+        for meeting in meetings:
+            # Lookup usage info from the pre-fetched map
+            tokens, cost = usage_map.get(meeting.id, (0, 0))
             
             # Create preview (first 200 chars of summary)
             summary_preview = meeting.summary_text[:200] if meeting.summary_text else ""
@@ -289,9 +333,16 @@ async def get_user_meetings(
                 "estimated_cost": cost or 0
             })
         
-        logger.info("user_meetings_retrieved", user_id=str(user_uuid)[:8], count=len(meetings_data))
+        total_duration = time.perf_counter() - start_time
+        logger.info("user_meetings_retrieved", user_hash=hash_user_id(user_uuid), count=len(meetings_data), duration_seconds=round(total_duration, 3))
         return meetings_data, total_count
-        
+    
+    except ValidationError:
+        # Re-raise validation errors as-is (don't convert to DatabaseError)
+        raise
+    except AIServiceError:
+        # Re-raise AI service errors as-is
+        raise
     except Exception as e:
         logger.error("get_user_meetings_failed", error=str(e))
         raise DatabaseError("Failed to retrieve user meetings.") from e
@@ -332,8 +383,8 @@ async def get_meeting_detail(
         
         meeting = result.scalar_one_or_none()
         if meeting is None:
-            logger.warning("meeting_not_found", meeting_id=str(meeting_uuid)[:8], user_id=str(user_uuid)[:8])
-            raise ValueError("Meeting not found or access denied.")
+            logger.warning("meeting_not_found", user_hash=hash_user_id(user_uuid))
+            raise NotFoundError("Meeting not found or access denied.")
         
         # Get usage info
         usage_result = await db.execute(
@@ -352,7 +403,16 @@ async def get_meeting_detail(
             "prompt_tokens": usage_record.prompt_tokens if usage_record else 0,
             "completion_tokens": usage_record.completion_tokens if usage_record else 0
         }
-        
+    
+    except NotFoundError:
+        # Re-raise not found errors as-is (for 404 responses)
+        raise
+    except ValidationError:
+        # Re-raise validation errors as-is (don't convert to DatabaseError)
+        raise
+    except AIServiceError:
+        # Re-raise AI service errors as-is
+        raise
     except Exception as e:
         logger.error("get_meeting_detail_failed", error=str(e))
         raise DatabaseError("Failed to retrieve meeting details.") from e

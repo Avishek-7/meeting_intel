@@ -27,12 +27,13 @@ from services.analytics_service import (
     parse_date_range,
 )
 from services.user_service import get_or_create_user_by_email
-from core.exceptions import ValidationError, AIServiceError, DatabaseError
+from core.exceptions import ValidationError, AIServiceError, DatabaseError, NotFoundError
 from core.dependencies import get_current_user
 from core.database import get_db
 from core.queue import redis_client as queue_redis_client
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
+from redis.exceptions import RedisError
 from datetime import datetime
 import logging
 
@@ -167,6 +168,12 @@ async def get_meeting_job_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job not found.",
         )
+    except RedisError:
+        logger.exception("Redis error fetching job status.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Background queue is temporarily unavailable.",
+        )
 
     email = current_user.get("email") or f"{username}@meetingintel.local"
     user = await get_or_create_user_by_email(db, email)
@@ -284,17 +291,12 @@ async def get_meeting(
         )
         
         return MeetingDetail(**meeting_data)
-    except ValidationError as e:
+    except NotFoundError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
         )
-    except ValueError as e:
-        if "not found" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Meeting not found or access denied.",
-            )
+    except ValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(e),
@@ -323,7 +325,7 @@ async def get_user_analytics(
     db: AsyncSession = Depends(get_db),
     from_date: str = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(None, description="End date (YYYY-MM-DD)"),
-    preset: str = Query("today", regex="^(today|7d|30d|all)$"),
+    preset: str = Query("today", pattern="^(today|7d|30d|all)$"),
 ):
     """Get user's aggregated stats."""
     username = current_user.get("username")
@@ -365,7 +367,7 @@ async def get_user_daily_analytics(
     db: AsyncSession = Depends(get_db),
     from_date: str = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(None, description="End date (YYYY-MM-DD)"),
-    preset: str = Query("7d", regex="^(today|7d|30d|all)$"),
+    preset: str = Query("7d", pattern="^(today|7d|30d|all)$"),
 ):
     """Get user's daily breakdown."""
     username = current_user.get("username")
@@ -407,7 +409,7 @@ async def get_global_analytics(
     db: AsyncSession = Depends(get_db),
     from_date: str = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(None, description="End date (YYYY-MM-DD)"),
-    preset: str = Query("7d", regex="^(today|7d|30d|all)$"),
+    preset: str = Query("7d", pattern="^(today|7d|30d|all)$"),
 ):
     """Get global stats (admin only)."""
     username = current_user.get("username")
@@ -417,13 +419,13 @@ async def get_global_analytics(
             detail="User identification not available",
         )
 
-    # TODO: Add admin role check here
-    # is_admin = current_user.get("is_admin", False)
-    # if not is_admin:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Admin access required.",
-    #     )
+    # Admin authorization check
+    user_role = current_user.get("role")
+    if user_role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
 
     try:
         date_from, date_to = parse_date_range(from_date, to_date, preset)
@@ -453,7 +455,7 @@ async def get_global_daily_analytics(
     db: AsyncSession = Depends(get_db),
     from_date: str = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(None, description="End date (YYYY-MM-DD)"),
-    preset: str = Query("7d", regex="^(today|7d|30d|all)$"),
+    preset: str = Query("7d", pattern="^(today|7d|30d|all)$"),
 ):
     """Get global daily breakdown (admin only)."""
     username = current_user.get("username")
@@ -463,7 +465,13 @@ async def get_global_daily_analytics(
             detail="User identification not available",
         )
 
-    # TODO: Add admin role check here
+    # Admin authorization check
+    user_role = current_user.get("role")
+    if user_role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
 
     try:
         date_from, date_to = parse_date_range(from_date, to_date, preset)

@@ -30,7 +30,6 @@ async def get_user_stats(
             select(
                 func.sum(UsageRecord.estimated_cost).label("total_cost"),
                 func.sum(UsageRecord.total_tokens).label("total_tokens"),
-                func.count(UsageRecord.meeting_id.distinct()).label("total_meetings"),
                 UsageRecord.model_name
             ).where(
                 and_(
@@ -45,19 +44,28 @@ async def get_user_stats(
         
         total_cost = Decimal("0.00")
         total_tokens = 0
-        total_meetings = 0
         cost_by_model = {}
         
         for row in rows:
             row_cost = row[0] or Decimal("0.00")
             row_tokens = row[1] or 0
-            row_meetings = row[2] or 0
-            model_name = row[3]
+            model_name = row[2]
             
             total_cost += row_cost
             total_tokens += row_tokens
-            total_meetings += row_meetings
             cost_by_model[model_name] = row_cost
+        
+        # Separate query for distinct meeting count (not grouped by model)
+        meeting_count_result = await db.execute(
+            select(func.count(UsageRecord.meeting_id.distinct())).where(
+                and_(
+                    UsageRecord.user_id == user_id,
+                    UsageRecord.created_at >= date_from,
+                    UsageRecord.created_at <= date_to
+                )
+            )
+        )
+        total_meetings = meeting_count_result.scalar() or 0
         
         logger.info(
             "user_stats_retrieved",
@@ -144,7 +152,6 @@ async def get_global_stats(
             select(
                 func.sum(UsageRecord.estimated_cost).label("total_cost"),
                 func.sum(UsageRecord.total_tokens).label("total_tokens"),
-                func.count(UsageRecord.meeting_id.distinct()).label("total_meetings"),
                 UsageRecord.model_name
             ).where(
                 and_(
@@ -157,19 +164,27 @@ async def get_global_stats(
         usage_rows = usage_result.fetchall()
         total_cost = Decimal("0.00")
         total_tokens = 0
-        total_meetings = 0
         cost_by_model = {}
         
         for row in usage_rows:
             row_cost = row[0] or Decimal("0.00")
             row_tokens = row[1] or 0
-            row_meetings = row[2] or 0
-            model_name = row[3]
+            model_name = row[2]
             
             total_cost += row_cost
             total_tokens += row_tokens
-            total_meetings += row_meetings
             cost_by_model[model_name] = row_cost
+        
+        # Separate query for distinct meeting count (not grouped by model)
+        meeting_count_result = await db.execute(
+            select(func.count(UsageRecord.meeting_id.distinct())).where(
+                and_(
+                    UsageRecord.created_at >= date_from,
+                    UsageRecord.created_at <= date_to
+                )
+            )
+        )
+        total_meetings = meeting_count_result.scalar() or 0
         
         # Count distinct users
         user_result = await db.execute(
@@ -264,11 +279,12 @@ async def get_user_top_expensive_meetings(
         result = await db.execute(
             select(
                 UsageRecord.meeting_id,
-                UsageRecord.estimated_cost,
-                UsageRecord.total_tokens,
-                UsageRecord.created_at
+                func.sum(UsageRecord.estimated_cost).label("total_cost"),
+                func.sum(UsageRecord.total_tokens).label("total_tokens"),
+                func.max(UsageRecord.created_at).label("created_at")
             ).where(UsageRecord.user_id == user_id)
-            .order_by(UsageRecord.estimated_cost.desc())
+            .group_by(UsageRecord.meeting_id)
+            .order_by(func.sum(UsageRecord.estimated_cost).desc())
             .limit(limit)
         )
         
@@ -278,8 +294,8 @@ async def get_user_top_expensive_meetings(
         for row in rows:
             meetings.append({
                 "meeting_id": str(row[0]),
-                "cost": row[1],
-                "tokens": row[2],
+                "cost": row[1] or Decimal("0.00"),
+                "tokens": row[2] or 0,
                 "created_at": row[3]
             })
         
@@ -287,6 +303,7 @@ async def get_user_top_expensive_meetings(
         return meetings
     except Exception as e:
         logger.error("top_expensive_meetings_failed", error=str(e))
+        raise
         raise
 
 
@@ -312,9 +329,9 @@ def parse_date_range(from_param: str = None, to_param: str = None, preset: str =
             date_to = datetime.fromisoformat(to_param)
             return date_from, date_to
         except ValueError:
-            logger.warning(f"Invalid date format: {from_param}, {to_param}")
+            logger.warning("invalid_data_format", from_param=from_param, to_param=to_param)
     
-    # Use preset
+        # Use preset
     if preset == "today":
         return today, tomorrow
     elif preset == "7d":

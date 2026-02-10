@@ -48,7 +48,7 @@
 ### Option 1: Automatic (Recommended)
 Run the migration helper:
 ```bash
-cd /home/avishek/Projects/meeting-intel/backend
+cd backend
 python -m scripts.apply_migrations
 ```
 

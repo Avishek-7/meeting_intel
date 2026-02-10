@@ -23,7 +23,7 @@ if settings.redis_url:
             default_timeout=300,  # 5 minutes
         )
     except Exception as e:
-        logger.error("redis_connection_failed", error=str(e))
+        logger.error("redis_connection_failed: %s", e)
         redis_client = None
         default_queue = None
 else:

@@ -1,14 +1,16 @@
 """
-Migration helper to apply schema changes.
+Database setup helper for initial table creation.
 
-This script creates/updates database tables with the new indices and relationships.
-Run this after deploying model changes.
+This script creates database tables that don't yet exist.
+NOTE: It does NOT update existing table schemas. For schema migrations
+(adding/removing columns, indexes), use Alembic.
 
 Usage:
     python -m backend.scripts.apply_migrations
 """
 
 import sys
+from urllib.parse import urlparse, urlunparse
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from core.config import settings
@@ -18,8 +20,23 @@ import structlog
 logger = structlog.get_logger("migrations")
 
 
+def mask_db_url(db_url: str) -> str:
+    """Mask database credentials in URL for safe logging."""
+    try:
+        parsed = urlparse(db_url)
+        if parsed.password:
+            # Replace password with mask
+            masked_netloc = parsed.netloc.replace(f":{parsed.password}@", ":***@")
+            masked = parsed._replace(netloc=masked_netloc)
+            return urlunparse(masked)
+        return db_url
+    except Exception:
+        # If parsing fails, return safe fallback
+        return f"{parsed.scheme}://{parsed.hostname}" if parsed else "***"
+
+
 def apply_migrations():
-    """Apply pending migrations by creating/updating tables."""
+    """Create database tables that don't yet exist (does not modify existing tables)."""
     try:
         # Convert async URL to sync URL for migrations
         db_url = settings.DATABASE_URL
@@ -34,7 +51,7 @@ def apply_migrations():
             echo=False,
         )
         
-        logger.info("Applying migrations...", url=db_url[:50])
+        logger.info("Creating database tables...", url=mask_db_url(db_url))
         
         # Test connection
         with engine.connect() as conn:
@@ -47,13 +64,13 @@ def apply_migrations():
             Base.metadata.create_all(conn)
             logger.info("Schema creation complete")
             
-            # Log created/updated tables
+            # Log all existing tables
             result = conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname='public'"))
             tables = result.fetchall()
             table_names = [t[0] for t in tables]
             logger.info("Current tables", count=len(table_names), tables=table_names)
         
-        logger.info("✓ Migration complete")
+        logger.info("✓ Table creation complete")
         engine.dispose()
         return True
         

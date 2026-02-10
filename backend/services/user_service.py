@@ -76,5 +76,5 @@ async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
         )
         return result.scalar_one_or_none()
     except SQLAlchemyError as e:
-        logger.error(f"Database error retrieving user: {user_id}", exc_info=True)
+        logger.error("Database error retrieving user", exc_info=True)  # Don't log PII (user_id)
         raise DatabaseError("Failed to retrieve user") from e
