@@ -204,17 +204,17 @@ async def get_meeting_job_status(
 # Meeting History & Analytics Endpoints
 
 @router.get(
-    "",
+    "/history",
     response_model=PaginatedMeetings,
     status_code=status.HTTP_200_OK,
 )
-async def list_user_meetings(
+async def get_meeting_history(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    """List user's meetings with metadata (paginated)."""
+    """Get user's meeting history with metadata (paginated)."""
     username = current_user.get("username")
     if not username:
         raise HTTPException(
