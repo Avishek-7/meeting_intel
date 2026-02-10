@@ -1,6 +1,5 @@
 import redis
 import os
-from functools import lru_cache
 from typing import Optional
 import logging
 from core.config import settings
@@ -11,8 +10,13 @@ REDIS_SOCKET_CONNECT_TIMEOUT = settings.redis_socket_connect_timeout
 
 logger = logging.getLogger(__name__)
 
-@lru_cache(maxsize=1)
+_redis_client: Optional[redis.Redis] = None
+
+
 def get_redis_client() -> Optional[redis.Redis]:
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
     try:
         client = redis.Redis.from_url(
             REDIS_URL,
@@ -21,6 +25,7 @@ def get_redis_client() -> Optional[redis.Redis]:
             socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT,
         )
         client.ping()
+        _redis_client = client
         return client
     except Exception as e:
         logger.warning("redis_unavailable", extra={"error": str(e)})

@@ -11,10 +11,19 @@ import hashlib
 from typing import Union
 import uuid
 import os
+import logging
+
+_logger = logging.getLogger(__name__)
 
 # Load from environment/secrets manager in production
 # This pepper prevents enumeration attacks on the hashed identifiers
 _HASH_PEPPER = os.environ.get("PII_HASH_PEPPER", "")
+
+if not _HASH_PEPPER:
+    _logger.warning(
+        "PII_HASH_PEPPER is not set. Hashed identifiers are vulnerable to enumeration attacks. "
+        "Set this environment variable in production."
+    )
 
 
 def hash_user_id(user_id: Union[str, uuid.UUID]) -> str:

@@ -88,9 +88,9 @@ async def process_meeting(
             detail="Failed to save meeting data."
         )
     
-    except Exception:
+    except Exception as e:
         # Catch-all safety net - re-raise HTTPException to avoid masking auth errors
-        if isinstance(Exception, HTTPException):
+        if isinstance(e, HTTPException):
             raise
         logger.exception("Unexpected error during meeting processing.") 
         raise HTTPException(

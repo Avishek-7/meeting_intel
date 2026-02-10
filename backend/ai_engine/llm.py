@@ -71,6 +71,9 @@ def _call_openai(prompt: str) -> tuple[str, dict]:
         tracker["completion_tokens"] = tracker.get("completion_tokens", 0) + usage["completion_tokens"]
         tracker["total_tokens"] = tracker.get("total_tokens", 0) + usage["total_tokens"]
     
+    if not response.choices:
+        raise AIServiceError("LLM returned no choices")
+    
     return response.choices[0].message.content, usage
 
 def generate_response(prompt: str) -> str:
@@ -181,7 +184,12 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
   ]
 }"""
     
-    response = generate_response(prompt)
+    try:
+        response = generate_response(prompt)
+    except Exception:
+        latency = time.perf_counter() - start_time
+        logger.error("extract_actions_failed", version=version, latency_seconds=round(latency, 3))
+        raise
     json_payload = _extract_json_payload(response)
 
     try:
@@ -287,5 +295,5 @@ def _parse_action_items_text(response: str) -> list[dict]:
             "priority": "medium"
         })
     
-    logger.info("Parsed %d action items from text", len(items))
+    logger.info("parse_action_items_text_complete", count=len(items))
     return items

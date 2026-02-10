@@ -50,12 +50,15 @@ def analyze_meeting(transcript: str) -> MeetingState:
             combined_summaries = " ".join(chunk_summaries)
             if len(combined_summaries) > MAX_LENGTH:
                 logger.warning("combined_summaries_exceed_max", length=len(combined_summaries))
+                combined_summaries = combined_summaries[:MAX_LENGTH]
             summary = summarize_text(combined_summaries)
+            action_source_text = summary
         else:
             summary = summarize_text(state["cleaned_text"])
+            action_source_text = state["cleaned_text"]
 
         # Extract actions
-        actions = extract_action_items(state["cleaned_text"])
+        actions = extract_action_items(action_source_text)
 
         # Validate outputs
         state["summary"] = validate_summary(summary)
@@ -66,10 +69,10 @@ def analyze_meeting(transcript: str) -> MeetingState:
         
         # Log aggregated usage
         logger.info("total_llm_usage", **usage_data)
-        
-        return state
-    
-    except Exception:
+    except Exception as e:
+        total_duration = time.perf_counter() - start_time
+        logger.error("analyze_meeting_failed", duration_seconds=round(total_duration, 3), exc_info=True)
+        raise
         total_duration = time.perf_counter() - start_time
         logger.error("analyze_meeting_failed", duration_seconds=round(total_duration, 3))
         raise

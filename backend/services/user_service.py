@@ -45,14 +45,18 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
     except IntegrityError:
         # Handle race condition - another request created the user
         await db.rollback()
-        result = await db.execute(
-            select(User).where(User.email == email)
-        )
-        user = result.scalar_one_or_none()
-        if user:
-            logger.info(f"User created concurrently, retrieved id: {user.id}")
-            return user
-        raise DatabaseError("Failed to create or retrieve user")
+        try:
+            result = await db.execute(
+                select(User).where(User.email == email)
+            )
+            user = result.scalar_one_or_none()
+            if user:
+                logger.info(f"User created concurrently, retrieved id: {user.id}")
+                return user
+            raise DatabaseError("Failed to create or retrieve user")
+        except SQLAlchemyError as e:
+            logger.error("Database error during race condition recovery", exc_info=True)
+            raise DatabaseError("Failed to retrieve user after conflict") from e
         
     except SQLAlchemyError as e:
         logger.error("Database error managing user", exc_info=True)

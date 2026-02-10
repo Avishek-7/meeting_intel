@@ -1,7 +1,7 @@
 from ai_engine.validation import validate_summary, validate_action_items
 
 def test_validate_summary_fallback():
-    # Test that empty string returns fallback
+    # Test that None raises ValueError
     try:
         validate_summary(None)
         assert False, "Should raise ValueError for None"
@@ -19,3 +19,5 @@ def test_validate_action_items_defaults():
     assert validated[0]["owner"] == "Not specified"
     assert validated[0]["due_date"] == "N/A"
     assert validated[1]["owner"] == "Alice"
+    assert validated[1]["due_date"] == "N/A"
+    

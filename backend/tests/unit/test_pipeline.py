@@ -12,7 +12,7 @@ def test_pipeline_happy_path(monkeypatch):
         lambda text, version="v1": [{"task": "Mock action"}]
     )
 
-    transcript = "Jhon will prepare the report by Friday."
+    transcript = "John will prepare the report by Friday."
 
     result = analyze_meeting(transcript)
 

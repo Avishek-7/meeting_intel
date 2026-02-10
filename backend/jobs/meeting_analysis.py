@@ -47,14 +47,14 @@ async def run_meeting_analysis_job(transcript: str, user_id: str, db: AsyncSessi
 
 def run_meeting_analysis_job_sync(transcript: str, user_id: str):
     async def _run():
-        async with get_async_session() as db:
-            return await retry_async(
-                lambda: run_meeting_analysis_job(
+        async def _attempt():
+            async with get_async_session() as db:
+                return await run_meeting_analysis_job(
                     transcript=transcript,
                     user_id=user_id,
                     db=db,
                 )
-            )
+        return await retry_async(_attempt)
     logger.info("meeting_analysis_job_sync_started")
     result = asyncio.run(_run())
     logger.info("meeting_analysis_job_sync_completed")

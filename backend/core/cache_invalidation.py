@@ -4,12 +4,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-redis_client = get_redis_client()
-
 def invalidate_meeting_cache(transcript: str) -> None:
     """Invalidate the cache for a given meeting transcript."""
     cache_key = meeting_cache_key(transcript)
-    
+    redis_client = get_redis_client()
+
     if redis_client is None:
         logger.warning(
             "cache_invalidation_skipped",

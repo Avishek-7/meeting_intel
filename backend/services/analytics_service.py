@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, cast
 from sqlalchemy.types import Date
 from datetime import datetime, timedelta
+import uuid
 from decimal import Decimal
 from typing import Dict, List, Tuple
 from models.usage_record import UsageRecord
@@ -25,6 +26,7 @@ async def get_user_stats(
         Dict with total_cost, total_tokens, total_meetings, cost_by_model
     """
     try:
+        user_uuid = uuid.UUID(user_id)
         # Query: sum of cost and tokens, grouped by model
         result = await db.execute(
             select(
@@ -33,7 +35,7 @@ async def get_user_stats(
                 UsageRecord.model_name
             ).where(
                 and_(
-                    UsageRecord.user_id == user_id,
+                    UsageRecord.user_id == user_uuid,
                     UsageRecord.created_at >= date_from,
                     UsageRecord.created_at <= date_to
                 )
@@ -59,7 +61,7 @@ async def get_user_stats(
         meeting_count_result = await db.execute(
             select(func.count(UsageRecord.meeting_id.distinct())).where(
                 and_(
-                    UsageRecord.user_id == user_id,
+                    UsageRecord.user_id == user_uuid,
                     UsageRecord.created_at >= date_from,
                     UsageRecord.created_at <= date_to
                 )
@@ -69,7 +71,7 @@ async def get_user_stats(
         
         logger.info(
             "user_stats_retrieved",
-            user_id=str(user_id)[:8],
+            user_id=str(user_uuid)[:8],
             total_cost=str(total_cost),
             total_tokens=total_tokens,
             total_meetings=total_meetings
@@ -101,6 +103,7 @@ async def get_user_daily_stats(
         List of dicts: [{date, cost, token_count, meeting_count}, ...]
     """
     try:
+        user_uuid = uuid.UUID(user_id)
         result = await db.execute(
             select(
                 cast(UsageRecord.created_at, Date).label("date"),
@@ -109,7 +112,7 @@ async def get_user_daily_stats(
                 func.count(UsageRecord.meeting_id.distinct()).label("meeting_count")
             ).where(
                 and_(
-                    UsageRecord.user_id == user_id,
+                    UsageRecord.user_id == user_uuid,
                     UsageRecord.created_at >= date_from,
                     UsageRecord.created_at <= date_to
                 )
@@ -276,13 +279,14 @@ async def get_user_top_expensive_meetings(
         List of dicts: [{meeting_id, cost, tokens, created_at}, ...]
     """
     try:
+        user_uuid = uuid.UUID(user_id)
         result = await db.execute(
             select(
                 UsageRecord.meeting_id,
                 func.sum(UsageRecord.estimated_cost).label("total_cost"),
                 func.sum(UsageRecord.total_tokens).label("total_tokens"),
                 func.max(UsageRecord.created_at).label("created_at")
-            ).where(UsageRecord.user_id == user_id)
+            ).where(UsageRecord.user_id == user_uuid)
             .group_by(UsageRecord.meeting_id)
             .order_by(func.sum(UsageRecord.estimated_cost).desc())
             .limit(limit)
@@ -327,12 +331,12 @@ def parse_date_range(from_param: str = None, to_param: str = None, preset: str =
             date_to = datetime.fromisoformat(to_param)
             return date_from, date_to
         except ValueError:
-            logger.warning("invalid_data_format", from_param=from_param, to_param=to_param)
-        except ValueError:
-            logger.warning("invalid_data_format", from_param=from_param, to_param=to_param)
+            logger.warning("invalid_date_format", from_param=from_param, to_param=to_param)
     
     # Use preset
     if preset == "today":
+        return today, tomorrow
+    elif preset == "7d":
         return today - timedelta(days=7), tomorrow
     elif preset == "30d":
         return today - timedelta(days=30), tomorrow
