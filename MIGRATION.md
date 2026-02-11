@@ -53,11 +53,8 @@ python -m scripts.apply_migrations
 ```
 
 ### Option 2: Manual
-Your database will automatically create tables on first connection. SQLAlchemy will create:
-- Composite indices on `meetings(user_id, created_at)`
-- Composite indices on `usage_records(user_id, created_at)`
-- Single index on `usage_records(created_at)`
-- Foreign key relationships with cascading deletes
+### Option 2: Manual
+Manually create tables and indices by running the following in your application:
 
 ## Deduplication Status
 ✅ Already Implemented

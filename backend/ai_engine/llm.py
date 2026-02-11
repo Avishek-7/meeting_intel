@@ -55,12 +55,15 @@ def _call_openai(prompt: str) -> tuple[str, dict]:
         max_tokens=MAX_TOKENS,
     )
     
-    usage = {
-        "model": DEFAULT_MODEL,
-        "prompt_tokens": response.usage.prompt_tokens,
-        "completion_tokens": response.usage.completion_tokens,
-        "total_tokens": response.usage.total_tokens,
-    }
+    usage = {}
+    if response.usage:
+        usage = {
+            "model": DEFAULT_MODEL,
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens,
+        }
+        logger.info("llm_tokens", **usage)
     logger.info("llm_tokens", **usage)
     
     # Accumulate usage in context var if available
