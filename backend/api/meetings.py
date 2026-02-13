@@ -29,6 +29,8 @@ from services.analytics_service import (
 from services.user_service import get_or_create_user_by_email
 from core.exceptions import ValidationError, AIServiceError, DatabaseError, NotFoundError
 from core.dependencies import get_current_user
+from core.authorization import get_admin_user
+from core.rbac import log_admin_action
 from core.database import get_db
 from core.queue import redis_client as queue_redis_client
 from rq.job import Job
@@ -405,7 +407,7 @@ async def get_user_daily_analytics(
     status_code=status.HTTP_200_OK,
 )
 async def get_global_analytics(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
     from_date: str = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(None, description="End date (YYYY-MM-DD)"),
@@ -417,14 +419,6 @@ async def get_global_analytics(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User identification not available",
-        )
-
-    # Admin authorization check
-    user_role = current_user.get("role")
-    if user_role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
         )
 
     try:
@@ -451,7 +445,7 @@ async def get_global_analytics(
     status_code=status.HTTP_200_OK,
 )
 async def get_global_daily_analytics(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
     from_date: str = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(None, description="End date (YYYY-MM-DD)"),
@@ -463,14 +457,6 @@ async def get_global_daily_analytics(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User identification not available",
-        )
-
-    # Admin authorization check
-    user_role = current_user.get("role")
-    if user_role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
         )
 
     try:

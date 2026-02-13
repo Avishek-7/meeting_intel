@@ -1,0 +1,30 @@
+"""Quick reference for logging in this application"""
+
+# IMPORT THESE:
+from core.log_utils import log_error, log_info, log_warning, log_debug, log_operation, log_function_call
+from core.rbac import log_admin_action, log_authorization_failure
+
+# BASIC ERROR LOGGING:
+try:
+    result = await db.query()
+except Exception as e:
+    log_error("operation_name_failed", e, operation="query_users", user_id="hash_123")
+
+# OPERATION WITH TIMING:
+async with log_operation("my_operation", user_id="hash_123") as monitor:
+    result = await expensive_operation()
+    monitor.result = result
+
+# SUCCESS LOG:
+log_info("operation_complete", operation="fetch_user", rows=1)
+
+# WARNING LOG:
+log_warning("fallback_used", cache_miss=True, falling_back="database")
+
+# ADMIN ACTION:
+log_admin_action("admin_user", "delete_user", "user_123", success=True)
+
+# FUNCTION DECORATOR:
+@log_function_call
+async def my_function(arg1):
+    return result

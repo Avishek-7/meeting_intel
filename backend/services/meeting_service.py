@@ -14,6 +14,7 @@ from core.cache_invalidation import invalidate_meeting_cache
 from services.usage_service import track_ai_usage
 from core.queue import default_queue
 from core.privacy import hash_user_id, hash_meeting_id
+from core.log_utils import log_error, log_info, log_warning, log_operation
 import json
 import structlog
 import time
@@ -42,18 +43,29 @@ def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
         required data even if metadata operations fail.
     """
     if default_queue is None:
-        logger.error("queue_unavailable")
+        log_error(
+            "queue_unavailable",
+            Exception("RQ queue not initialized"),
+            operation="enqueue_meeting_analysis"
+        )
         raise AIServiceError("Background queue is not available.")
 
     # Validate user_id format early
     try:
         uuid.UUID(user_id)
     except (ValueError, TypeError) as e:
-        logger.warning("invalid_user_id_format_enqueue")  # Don't log PII
+        log_warning(
+            "invalid_user_id_format_enqueue",
+            context={"user_hash": hash_user_id(user_id)},
+            error_msg=str(e)
+        )
         raise ValidationError("Invalid user_id format.") from e
 
     if len(transcript) < 10:
-        logger.warning("transcript_too_short")
+        log_warning(
+            "transcript_too_short",
+            context={"user_hash": hash_user_id(user_id), "transcript_length": len(transcript)}
+        )
         raise ValidationError("Transcript is too short to process.")
 
     # Enqueue with metadata set atomically to avoid race condition
@@ -66,19 +78,46 @@ def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
             job_timeout=300,
             meta={"user_id": user_id}  # Set metadata atomically during enqueue
         )
-        logger.info("meeting_analysis_job_enqueued", job_id=job.id)
+        log_info(
+            "meeting_analysis_job_enqueued",
+            job_id=job.id,
+            user_hash=hash_user_id(user_id),
+            transcript_length=len(transcript)
+        )
         return job.id
     except Exception as e:
-        logger.error("job_enqueue_failed", error=str(e))
+        log_error(
+            "job_enqueue_failed",
+            e,
+            context={
+                "user_hash": hash_user_id(user_id),
+                "transcript_length": len(transcript)
+            },
+            operation="enqueue_meeting_analysis_job"
+        )
         raise AIServiceError("Failed to enqueue meeting analysis job.") from e
 
 def _validate_ai_result(result: dict) -> None:
     if not isinstance(result, dict):
-        logger.error("AI service returned non-dict response.")
+        log_error(
+            "ai_service_invalid_response",
+            Exception("Expected dict response"),
+            context={"response_type": type(result).__name__},
+            operation="validate_ai_result"
+        )
         raise AIServiceError("AI service returned invalid response.")
 
     if "summary" not in result or "action_items" not in result:
-        logger.error("AI response missing required fields.")
+        log_error(
+            "ai_response_missing_fields",
+            Exception("Missing required fields"),
+            context={
+                "has_summary": "summary" in result,
+                "has_action_items": "action_items" in result,
+                "keys": list(result.keys())
+            },
+            operation="validate_ai_result"
+        )
         raise AIServiceError("AI response missing required fields.")
 
 async def process_meeting_transcript(

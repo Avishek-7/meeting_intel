@@ -3,25 +3,19 @@ import structlog
 from fastapi import Request
 
 async def request_context_middleware(request: Request, call_next):
+    """Set up request context for structured logging."""
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
 
-    async def request_context_middleware(request: Request, call_next):
-        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    
-        structlog.contextvars.clear_contextvars()
-        structlog.contextvars.bind_contextvars(
-            request_id=request_id,
-            method=request.method,
-            path=request.url.path,
-        )
-    
-        try:
-            response = await call_next(request)
-            response.headers["X-Request-ID"] = request_id
-            return response
-        finally:
-            structlog.contextvars.clear_contextvars()
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(
+        request_id=request_id,
+        method=request.method,
+        path=request.url.path,
+    )
 
-    response = await call_next(request)
-    response.headers["X-Request-ID"] = request_id
-    return response
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        structlog.contextvars.clear_contextvars()

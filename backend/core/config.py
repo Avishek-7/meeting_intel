@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     redis_socket_timeout: float = 5
     redis_socket_connect_timeout: float = 5
 
+    # Security/Privacy settings
+    PII_HASH_PEPPER: str = ""  # Should be set in production via environment variable
+
     class Config:
         # Load env from project root when running inside backend/
         env_file = str(Path(__file__).resolve().parent.parent.parent / ".env")

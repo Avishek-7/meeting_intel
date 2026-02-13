@@ -10,14 +10,12 @@ GDPR/CCPA Compliance:
 import hashlib
 from typing import Union
 import uuid
-import os
 import logging
+from core.config import settings
 
 _logger = logging.getLogger(__name__)
 
-# Load from environment/secrets manager in production
-# This pepper prevents enumeration attacks on the hashed identifiers
-_HASH_PEPPER = os.environ.get("PII_HASH_PEPPER", "")
+_HASH_PEPPER = settings.PII_HASH_PEPPER
 
 if not _HASH_PEPPER:
     _logger.warning(
