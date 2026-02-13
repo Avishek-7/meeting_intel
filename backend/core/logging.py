@@ -38,7 +38,7 @@ def configure_logging() -> None:
         "duration_sec",
         "response_size_bytes",
         "user_hash",  # Anonymized user identifier (never log raw user_id)
-        "username",
+        # Note: username is also PII - must be hashed before logging (GDPR/CCPA)
         "operation",
         "function",
         "meeting_id",

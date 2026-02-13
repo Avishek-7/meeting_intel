@@ -4,9 +4,11 @@ Authorization dependencies for FastAPI routes.
 Provides reusable dependency functions for role and permission-based access control.
 """
 
+from typing import Callable
 from fastapi import Depends, HTTPException, status
 from core.dependencies import get_current_user
 from core.rbac import Role, Permission, has_permission, log_authorization_failure
+from core.privacy import hash_user_id
 
 
 async def get_admin_user(current_user: dict = Depends(get_current_user)) -> dict:
@@ -22,7 +24,9 @@ async def get_admin_user(current_user: dict = Depends(get_current_user)) -> dict
     role_str = current_user.get("role", "user")
     
     if role_str != Role.ADMIN.value:
-        log_authorization_failure(username, "access_admin_resource", f"insufficient_role:{role_str}")
+        # Hash username before logging (PII protection)
+        username_hash = hash_user_id(username)
+        log_authorization_failure(username_hash, "access_admin_resource", f"insufficient_role:{role_str}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
@@ -31,9 +35,9 @@ async def get_admin_user(current_user: dict = Depends(get_current_user)) -> dict
     return current_user
 
 
-async def require_permission(
+def require_permission(
     permission: Permission,
-) -> callable:
+) -> Callable[..., dict]:
     """
     Factory for creating permission-based dependencies.
     
@@ -48,7 +52,9 @@ async def require_permission(
         username = current_user.get("username", "unknown")
         
         if not has_permission(current_user, permission):
-            log_authorization_failure(username, permission.value, "insufficient_permissions")
+            # Hash username before logging (PII protection)
+            username_hash = hash_user_id(username)
+            log_authorization_failure(username_hash, permission.value, "insufficient_permissions")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Permission '{permission.value}' required",

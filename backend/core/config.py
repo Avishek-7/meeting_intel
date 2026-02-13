@@ -1,6 +1,11 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
+import logging
+import os
+
+logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     app_name: str = "MeetingIntel"
@@ -48,5 +53,35 @@ class Settings(BaseSettings):
         # Load env from project root when running inside backend/
         env_file = str(Path(__file__).resolve().parent.parent.parent / ".env")
         env_file_encoding = "utf-8"
+
+    @field_validator("PII_HASH_PEPPER")
+    @classmethod
+    def validate_pii_hash_pepper(cls, v: str) -> str:
+        """
+        Validate PII_HASH_PEPPER is set.
+        
+        An empty pepper provides no additional hash protection.
+        This validator warns if the pepper is empty, to prevent
+        silent security degradation in production.
+        """
+        if not v or not v.strip():
+            is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
+            
+            if is_production:
+                # In production, log as critical error
+                logger.critical(
+                    "PII_HASH_PEPPER is empty in production. "
+                    "PII hashes are vulnerable to enumeration attacks. "
+                    "Set PII_HASH_PEPPER environment variable immediately."
+                )
+            else:
+                # In development, log as warning
+                logger.warning(
+                    "PII_HASH_PEPPER is not set. "
+                    "Hashed identifiers are vulnerable to enumeration attacks. "
+                    "Set this environment variable in production."
+                )
+        
+        return v
 
 settings = Settings()

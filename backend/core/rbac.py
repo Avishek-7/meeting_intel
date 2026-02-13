@@ -89,7 +89,19 @@ def log_admin_action(
     details: Optional[dict] = None,
     success: bool = True,
 ) -> None:
-    """Log administrative actions for audit trail."""
+    """
+    Log administrative actions for audit trail.
+    
+    IMPORTANT: username should be anonymized before passing (e.g., via hash_user_id()).
+    Logging raw usernames violates GDPR/CCPA data protection requirements.
+    
+    Args:
+        username: User identifier (should be hashed for PII protection)
+        action: Admin action performed (e.g., "delete_user", "modify_role")
+        resource: What was affected (user ID, resource name, etc.)
+        details: Additional context as dict
+        success: Whether the action succeeded
+    """
     status = "SUCCESS" if success else "FAILURE"
     detail_str = f" | {details}" if details else ""
     logger.warning(
@@ -102,7 +114,17 @@ def log_authorization_failure(
     action: str,
     reason: str,
 ) -> None:
-    """Log authorization failures for security monitoring."""
+    """
+    Log authorization failures for security monitoring.
+    
+    IMPORTANT: username should be anonymized before passing (e.g., via hash_user_id()).
+    Logging raw usernames violates GDPR/CCPA data protection requirements.
+    
+    Args:
+        username: User identifier (should be hashed for PII protection)
+        action: Action that was attempted
+        reason: Why authorization failed
+    """
     logger.warning(
         f"AUTHORIZATION_FAILURE | user={username} | action={action} | reason={reason}"
     )

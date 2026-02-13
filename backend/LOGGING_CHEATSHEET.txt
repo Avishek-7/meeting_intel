@@ -22,7 +22,8 @@ log_info("operation_complete", operation="fetch_user", rows=1)
 log_warning("fallback_used", cache_miss=True, falling_back="database")
 
 # ADMIN ACTION:
-log_admin_action("admin_user", "delete_user", "user_123", success=True)
+# Note: Always use hashed/anonymized identifiers, never raw user IDs
+log_admin_action("admin_hash_456", "delete_user", "user_hash_789", success=True)
 
 # FUNCTION DECORATOR:
 @log_function_call

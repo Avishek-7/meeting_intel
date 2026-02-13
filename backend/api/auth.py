@@ -40,5 +40,7 @@ def logout(response: Response):
         key=settings.AUTH_COOKIE_NAME,
         domain=settings.AUTH_COOKIE_DOMAIN,
         path=settings.AUTH_COOKIE_PATH,
+        secure=settings.AUTH_COOKIE_SECURE,
+        samesite=settings.AUTH_COOKIE_SAMESITE,
     )
     return {"detail": "Logged out"}

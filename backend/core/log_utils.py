@@ -2,10 +2,10 @@
 Advanced logging utilities for better error tracking and debugging.
 
 Provides:
-- Structured error logging with full context
+- Structured error logging with full context and tracebacks
 - Operation timing and performance tracking
-- Automatic request/response logging with filtering
-- Log decorators for functions
+- Function call logging decorator with automatic error handling
+- Helper functions for consistent structured logging
 """
 
 import asyncio
@@ -40,7 +40,7 @@ def log_error(
         "event": event,
         "error_type": error.__class__.__name__,
         "error_message": str(error),
-        "traceback": traceback.format_exc(),
+        "traceback": "".join(traceback.format_exception(type(error), error, error.__traceback__)),
         **(context or {}),
         **kwargs,
     }

@@ -64,16 +64,14 @@ def _call_openai(prompt: str) -> tuple[str, dict]:
             "total_tokens": response.usage.total_tokens,
         }
         logger.info("llm_tokens", **usage)
-    logger.info("llm_tokens", **usage)
     
     # Accumulate usage in context var if available
     tracker = _usage_tracker.get()
-    if tracker is not None:
+    if tracker is not None and usage:
         tracker["model"] = DEFAULT_MODEL
         tracker["prompt_tokens"] = tracker.get("prompt_tokens", 0) + usage["prompt_tokens"]
         tracker["completion_tokens"] = tracker.get("completion_tokens", 0) + usage["completion_tokens"]
         tracker["total_tokens"] = tracker.get("total_tokens", 0) + usage["total_tokens"]
-    
     if not response.choices:
         raise AIServiceError("LLM returned no choices")
     
@@ -201,9 +199,10 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
         
         if not isinstance(items, list):
             logger.error("extract_actions_json_list_invalid", version=version)
+        if not isinstance(items, list):
+            latency = time.perf_counter() - start_time
+            logger.error("extract_actions_json_list_invalid", version=version, latency_seconds=round(latency, 3))
             return []
-        
-        # Validate and normalize
         validated = []
         for idx, item in enumerate(items):
             if not isinstance(item, dict):
@@ -253,7 +252,7 @@ def _extract_json_payload(response: str) -> str:
             return candidate
 
     # Try to find the first JSON object in the response
-    obj_match = re.search(r"\{[\s\S]*\}", response)
+    obj_match = re.search(r"\{[\s\S]*?\}", response)
     if obj_match:
         return obj_match.group(0).strip()
 

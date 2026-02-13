@@ -131,7 +131,7 @@ async def enqueue_meeting_analysis(
         logger.exception("Queue unavailable during meeting processing.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(e),
+            detail="Meeting analysis queue is currently unavailable.",
         )
     except Exception:
         logger.exception("Unexpected error while enqueueing meeting analysis.")
@@ -258,59 +258,6 @@ async def get_meeting_history(
         )
     except Exception:
         logger.exception("Unexpected error listing meetings.")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error",
-        )
-
-
-@router.get(
-    "/{meeting_id}",
-    response_model=MeetingDetail,
-    status_code=status.HTTP_200_OK,
-)
-async def get_meeting(
-    meeting_id: str,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Get full details of a meeting."""
-    username = current_user.get("username")
-    if not username:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User identification not available",
-        )
-
-    try:
-        email = current_user.get("email") or f"{username}@meetingintel.local"
-        user = await get_or_create_user_by_email(db, email)
-        
-        meeting_data = await get_meeting_detail(
-            db=db,
-            user_id=str(user.id),
-            meeting_id=meeting_id
-        )
-        
-        return MeetingDetail(**meeting_data)
-    except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-    except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e),
-        )
-    except DatabaseError:
-        logger.exception("Database error retrieving meeting.")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve meeting.",
-        )
-    except Exception:
-        logger.exception("Unexpected error retrieving meeting.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
@@ -474,4 +421,60 @@ async def get_global_daily_analytics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve global daily analytics.",
+        )
+
+
+# Catch-all route for getting meeting details
+# IMPORTANT: This must be defined LAST after all specific routes like /analytics/*
+# because FastAPI matches routes in registration order
+@router.get(
+    "/{meeting_id}",
+    response_model=MeetingDetail,
+    status_code=status.HTTP_200_OK,
+)
+async def get_meeting(
+    meeting_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get full details of a meeting."""
+    username = current_user.get("username")
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User identification not available",
+        )
+
+    try:
+        email = current_user.get("email") or f"{username}@meetingintel.local"
+        user = await get_or_create_user_by_email(db, email)
+        
+        meeting_data = await get_meeting_detail(
+            db=db,
+            user_id=str(user.id),
+            meeting_id=meeting_id
+        )
+        
+        return MeetingDetail(**meeting_data)
+    except NotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+    except DatabaseError:
+        logger.exception("Database error retrieving meeting.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve meeting.",
+        )
+    except Exception:
+        logger.exception("Unexpected error retrieving meeting.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
         )

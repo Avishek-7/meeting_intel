@@ -174,23 +174,25 @@ structlog.contextvars.bind_contextvars(
 # ==============================================================================
 
 # Example 1: Database operation with error handling
+from core.privacy import hash_user_id
+
 async def update_user_role(user_id: str, new_role: str):
     async with log_operation(
         "update_user_role",
-        user_id=user_id,
+        user_id=hash_user_id(user_id),
         new_role=new_role
     ) as monitor:
         try:
             user = await db.get_user(user_id)
             user.role = new_role
             await db.commit()
-            log_info("user_role_updated", user_id=user_id, new_role=new_role)
+            log_info("user_role_updated", user_id=hash_user_id(user_id), new_role=new_role)
             monitor.result = user
             return user
         except IntegrityError as e:
             log_warning(
                 "role_update_conflict",
-                user_id=user_id,
+                user_id=hash_user_id(user_id),
                 new_role=new_role,
                 reason="duplicate_role"
             )
@@ -199,11 +201,11 @@ async def update_user_role(user_id: str, new_role: str):
             log_error(
                 "role_update_failed",
                 e,
-                context={"user_id": user_id, "new_role": new_role},
+                context={"user_id": hash_user_id(user_id), "new_role": new_role},
                 operation="update_user_role"
             )
             raise
-
+            raise
 
 # Example 2: Cache operations with fallback
 async def get_meeting_with_fallback(meeting_id: str):

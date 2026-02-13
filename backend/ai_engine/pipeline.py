@@ -73,8 +73,6 @@ def analyze_meeting(transcript: str) -> MeetingState:
         total_duration = time.perf_counter() - start_time
         logger.error("analyze_meeting_failed", duration_seconds=round(total_duration, 3), exc_info=True)
         raise
-        total_duration = time.perf_counter() - start_time
-        logger.error("analyze_meeting_failed", duration_seconds=round(total_duration, 3))
-        raise
     finally:
         _usage_tracker.reset(token)
+    return state

@@ -63,8 +63,8 @@ Manually create tables and indices by running the following in your application:
 - Both are enforced in `process_meeting_transcript()`
 
 ## Testing Checklist
-- [ ] Access `/meetings` → returns paginated list
-- [ ] Access `/meetings/{id}` → returns full detail or 404 if not owner
+- [ ] Access `/meetings/history` → returns paginated list
+- [ ] Access `/meetings/{meeting_id}` → returns full detail or 404 if not owner
 - [ ] Access `/analytics/user?preset=today` → returns user stats
 - [ ] Access `/analytics/user/daily?preset=7d` → returns daily breakdown
 - [ ] Access `/analytics/global` → returns global stats (implement admin check)

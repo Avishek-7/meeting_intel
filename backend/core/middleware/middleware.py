@@ -25,7 +25,7 @@ async def log_request_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
         status_code = response.status_code
-        response_size = response.headers.get("content-length", 0)
+        response_size = int(response.headers.get("content-length", 0) or 0)
 
         # Add correlation ID to response headers
         response.headers["X-Correlation-ID"] = correlation_id

@@ -8,7 +8,7 @@ def meeting_cache_key(transcript: str) -> str:
     Returns:
         A cache key in the format 'meeting:analysis:{sha256_hash}'.
     
-    Raise:
+    Raises:
         ValueError: If transcript is empty.
     """
     if not transcript:
