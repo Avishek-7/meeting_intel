@@ -205,8 +205,6 @@ async def update_user_role(user_id: str, new_role: str):
                 operation="update_user_role"
             )
             raise
-            raise
-
 # Example 2: Cache operations with fallback
 async def get_meeting_with_fallback(meeting_id: str):
     async with log_operation("fetch_meeting", meeting_id=meeting_id) as monitor:

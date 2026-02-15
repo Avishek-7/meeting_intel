@@ -1,14 +1,14 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+from pydantic import field_validator, ValidationInfo
 from typing import Optional
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     app_name: str = "MeetingIntel"
+    ENVIRONMENT: str = "development"
 
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # Auth cookie settings
     AUTH_COOKIE_NAME: str = "access_token"
-    AUTH_COOKIE_SECURE: bool = False
+    AUTH_COOKIE_SECURE: bool = True  # Set to False only for local HTTP development
     AUTH_COOKIE_SAMESITE: str = "lax"
     AUTH_COOKIE_DOMAIN: Optional[str] = None
     AUTH_COOKIE_PATH: str = "/"
@@ -57,7 +57,7 @@ class Settings(BaseSettings):
 
     @field_validator("PII_HASH_PEPPER")
     @classmethod
-    def validate_pii_hash_pepper(cls, v: str) -> str:
+    def validate_pii_hash_pepper(cls, v: str, info: ValidationInfo) -> str:
         """
         Validate PII_HASH_PEPPER is set.
         
@@ -66,14 +66,18 @@ class Settings(BaseSettings):
         silent security degradation in production.
         """
         if not v or not v.strip():
-            is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
+            environment = (info.data.get("ENVIRONMENT") or "").lower()
+            is_production = environment == "production"
             
             if is_production:
-                # In production, log as critical error
+                # In production, log as critical error and fail fast
                 logger.critical(
                     "PII_HASH_PEPPER is empty in production. "
                     "PII hashes are vulnerable to enumeration attacks. "
                     "Set PII_HASH_PEPPER environment variable immediately."
+                )
+                raise ValueError(
+                    "PII_HASH_PEPPER must be set in production to prevent enumeration attacks."
                 )
             else:
                 # In development, log as warning

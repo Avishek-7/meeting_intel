@@ -30,7 +30,10 @@ def generate_summary(transcript: str) -> str:
         return validate_summary(summary)
     except Exception as exc:
         logger.error("generate_summary_failed", error_type=type(exc).__name__, error_message=str(exc), exc_info=True)
-        fallback = clean_text(transcript)[:500].strip() or "Summary unavailable."
+        try:
+            fallback = clean_text(transcript)[:500].strip() or "Summary unavailable."
+        except Exception:
+            fallback = transcript[:500].strip() if transcript else "Summary unavailable."
         return fallback
 
 

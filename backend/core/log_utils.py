@@ -36,13 +36,15 @@ def log_error(
         operation: What operation was being performed
         **kwargs: Additional fields to log
     """
+    RESERVED_KEYS = {"event", "error_type", "error_message", "traceback", "operation"}
+    
     log_data = {
+        **(context or {}),
+        **{k: v for k, v in kwargs.items() if k not in RESERVED_KEYS},
         "event": event,
         "error_type": error.__class__.__name__,
         "error_message": str(error),
         "traceback": "".join(traceback.format_exception(type(error), error, error.__traceback__)),
-        **(context or {}),
-        **kwargs,
     }
     
     if operation:

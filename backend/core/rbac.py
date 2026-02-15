@@ -67,7 +67,7 @@ ROLE_PERMISSIONS: dict[Role, Set[Permission]] = {
 @lru_cache(maxsize=128)
 def get_role_permissions(role: Role) -> Set[Permission]:
     """Get all permissions for a given role."""
-    return ROLE_PERMISSIONS.get(role, set())
+    return frozenset(ROLE_PERMISSIONS.get(role, set()))
 
 
 def has_permission(user_context: dict, permission: Permission) -> bool:

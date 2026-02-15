@@ -39,7 +39,7 @@ def validate_action_items(items: list[dict] | None) -> list[dict]:
             logger.warning("Skipping non-dict action item at index %d: %s", idx, type(item))
             continue
         
-        task = item.get("task", "").strip()
+        task = str(item.get("task") or "").strip()
         if not task:
             logger.warning("Skipping action item at index %d: empty task", idx)
             continue

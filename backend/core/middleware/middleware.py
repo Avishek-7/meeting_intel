@@ -5,6 +5,29 @@ import uuid
 
 logger = structlog.get_logger("middleware")
 
+_SENSITIVE_QUERY_KEYS = {
+    "token",
+    "api_key",
+    "apikey",
+    "password",
+    "code",
+    "access_token",
+    "session_id",
+}
+
+
+def _sanitize_query_params(query_params: dict) -> str | None:
+    if not query_params:
+        return None
+
+    sanitized: dict[str, str] = {}
+    for key, value in query_params.items():
+        if key.lower() in _SENSITIVE_QUERY_KEYS:
+            sanitized[key] = "[REDACTED]"
+        else:
+            sanitized[key] = value
+    return str(sanitized)
+
 async def log_request_middleware(request: Request, call_next):
     # Generate or extract correlation ID
     correlation_id = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
@@ -15,7 +38,7 @@ async def log_request_middleware(request: Request, call_next):
         correlation_id=correlation_id,
         method=request.method,
         path=request.url.path,
-        query_params=str(dict(request.query_params)) if request.query_params else None,
+        query_params=_sanitize_query_params(dict(request.query_params)),
     )
     
     start_time = time.time()

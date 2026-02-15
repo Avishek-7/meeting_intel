@@ -15,7 +15,7 @@ def configure_logging() -> None:
         handlers=[
             RichHandler(
                 rich_tracebacks=True,
-                tracebacks_show_locals=True,  # Show local variable values in tracebacks
+                tracebacks_show_locals=False,  # Disabled to prevent leaking secrets/PII
                 show_path=True,  # Show file path and line number
                 show_time=True,
                 markup=True,

@@ -53,8 +53,7 @@ python -m scripts.apply_migrations
 ```
 
 ### Option 2: Manual
-### Option 2: Manual
-Manually create tables and indices by running the following in your application:
+Execute the following SQL statements or use your ORM's migration tool:
 
 ## Deduplication Status
 ✅ Already Implemented
@@ -63,7 +62,7 @@ Manually create tables and indices by running the following in your application:
 - Both are enforced in `process_meeting_transcript()`
 
 ## Testing Checklist
-- [ ] Access `/meetings/history` → returns paginated list
+- [ ] Access `/meetings` → returns paginated list
 - [ ] Access `/meetings/{meeting_id}` → returns full detail or 404 if not owner
 - [ ] Access `/analytics/user?preset=today` → returns user stats
 - [ ] Access `/analytics/user/daily?preset=7d` → returns daily breakdown

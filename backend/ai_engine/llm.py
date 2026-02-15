@@ -34,7 +34,7 @@ BASE_WAIT_SECONDS = settings.OPENAI_RETRY_BASE_WAIT
 # Create retry decorator for OpenAI calls with exponential backoff
 _retry_openai = with_exponential_backoff(
     exception_types=(APIError, RateLimitError, APITimeoutError),
-    max_retries=MAX_RETRIES,
+    max_attempts=MAX_RETRIES,
     base_wait_seconds=BASE_WAIT_SECONDS,
 )
 
@@ -74,8 +74,12 @@ def _call_openai(prompt: str) -> tuple[str, dict]:
         tracker["total_tokens"] = tracker.get("total_tokens", 0) + usage["total_tokens"]
     if not response.choices:
         raise AIServiceError("LLM returned no choices")
-    
-    return response.choices[0].message.content, usage
+
+    content = response.choices[0].message.content
+    if content is None:
+        raise AIServiceError("LLM returned a non-text response with no content")
+
+    return content, usage
 
 def generate_response(prompt: str) -> str:
     """
@@ -196,44 +200,43 @@ def extract_action_items(text: str, version: str = "v1") -> list[dict]:
     try:
         data = json.loads(json_payload)
         items = data.get("action_items", [])
-        
-        if not isinstance(items, list):
-            logger.error("extract_actions_json_list_invalid", version=version)
+
         if not isinstance(items, list):
             latency = time.perf_counter() - start_time
             logger.error("extract_actions_json_list_invalid", version=version, latency_seconds=round(latency, 3))
             return []
+
         validated = []
         for idx, item in enumerate(items):
             if not isinstance(item, dict):
                 logger.warning("extract_actions_item_not_dict", version=version, index=idx)
                 continue
-            
-            task = item.get("task", "").strip()
+
+            task = (item.get("task") or "").strip()
             if not task:
                 logger.warning("extract_actions_empty_task", version=version, index=idx)
                 continue
-            
-            owner = item.get("owner", "").strip() or "Not specified"
-            due_date = item.get("due_date", "").strip() or "N/A"
-            priority = item.get("priority", "medium").lower()
-            
+
+            owner = (item.get("owner") or "").strip() or "Not specified"
+            due_date = (item.get("due_date") or "").strip() or "N/A"
+            priority = (item.get("priority") or "medium").lower()
+
             # Validate priority
             if priority not in ["high", "medium", "low"]:
                 logger.warning("extract_actions_invalid_priority", version=version, index=idx, priority=priority)
                 priority = "medium"
-            
+
             validated.append({
                 "task": task.strip(",;"),
                 "owner": owner,
                 "due_date": due_date,
-                "priority": priority
+                "priority": priority,
             })
-        
+
         latency = time.perf_counter() - start_time
         logger.info("extract_actions_success", version=version, latency_seconds=round(latency, 3), count=len(validated))
         return validated
-    
+
     except json.JSONDecodeError:
         latency = time.perf_counter() - start_time
         logger.warning("extract_actions_json_parse_failed", version=version, latency_seconds=round(latency, 3))
@@ -251,8 +254,21 @@ def _extract_json_payload(response: str) -> str:
         if candidate:
             return candidate
 
-    # Try to find the first JSON object in the response
-    obj_match = re.search(r"\{[\s\S]*?\}", response)
+    # Try to find the first JSON object in the response with balanced braces
+    start = response.find("{")
+    if start != -1:
+        depth = 0
+        for index in range(start, len(response)):
+            char = response[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return response[start : index + 1].strip()
+
+    # Fallback to a greedy regex if braces are unbalanced
+    obj_match = re.search(r"\{[\s\S]*\}", response)
     if obj_match:
         return obj_match.group(0).strip()
 

@@ -27,7 +27,7 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
         user = result.scalar_one_or_none()
         
         if user:
-            logger.info(f"Found existing user with id: {user.id}")
+            logger.info("Found existing user")
             return user
         
         # Create new user
@@ -39,7 +39,7 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
         await db.commit()
         await db.refresh(user)
         
-        logger.info(f"Created new user with id: {user.id}")
+        logger.info("Created new user")
         return user
         
     except IntegrityError:
@@ -51,7 +51,7 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
             )
             user = result.scalar_one_or_none()
             if user:
-                logger.info(f"User created concurrently, retrieved id: {user.id}")
+                logger.info("User created concurrently, retrieved existing user")
                 return user
             raise DatabaseError("Failed to create or retrieve user")
         except SQLAlchemyError as e:

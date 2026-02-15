@@ -202,14 +202,28 @@ async def process_meeting_transcript(
             result = json.loads(cached_result)
         except (TypeError, ValueError) as e:
             logger.error("cache_decode_failed", error=str(e))
-            raise AIServiceError("Cached AI response is corrupted.") from e
-
-        try:
-            _validate_ai_result(result)
-        except AIServiceError as e:
-            logger.error("cache_validation_failed")
-            raise AIServiceError("Cached AI response is corrupted.") from e
-        from_cache = True
+            if redis_client is not None:
+                try:
+                    redis_client.delete(cache_key)
+                except Exception as delete_error:
+                    logger.error("cache_delete_failed", error=str(delete_error))
+            from_cache = False
+            cached_result = None
+        
+        if cached_result:
+            try:
+                _validate_ai_result(result)
+            except AIServiceError as e:
+                logger.error("cache_validation_failed", error=str(e))
+                if redis_client is not None:
+                    try:
+                        redis_client.delete(cache_key)
+                    except Exception as delete_error:
+                        logger.error("cache_delete_failed", error=str(delete_error))
+                from_cache = False
+                cached_result = None
+            else:
+                from_cache = True
 
     else:
         logger.info("cache_miss")

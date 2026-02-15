@@ -127,7 +127,7 @@ async def enqueue_meeting_analysis(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(e),
         )
-    except AIServiceError as e:
+    except (AIServiceError, RedisError) as e:
         logger.exception("Queue unavailable during meeting processing.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

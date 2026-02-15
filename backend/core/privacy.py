@@ -15,7 +15,7 @@ from core.config import settings
 
 _logger = logging.getLogger(__name__)
 
-_HASH_PEPPER = settings.PII_HASH_PEPPER
+_HASH_PEPPER = settings.PII_HASH_PEPPER or ""
 
 if not _HASH_PEPPER:
     _logger.warning(

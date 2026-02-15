@@ -36,17 +36,20 @@ async def retry_async(
 
 def with_exponential_backoff(
     exception_types: Tuple[Type[Exception], ...],
-    max_retries: int,
+    max_attempts: int,
     base_wait_seconds: float,
     max_wait_seconds: float = 10,
 ):
     """
     Decorator factory that creates a retry decorator with exponential backoff.
+    Uses with_exponential_backoff with max_attempts aligned to stop_after_attempt.
+    wait_exponential uses multiplier and min; base_wait_seconds is a floor, not
+    necessarily the first sleep.
     
     Args:
         exception_types: Tuple of exception types to retry on
-        max_retries: Maximum number of retry attempts
-        base_wait_seconds: Base wait time in seconds
+        max_attempts: Maximum number of attempts (stop_after_attempt)
+        base_wait_seconds: Floor for wait_exponential min
         max_wait_seconds: Maximum wait time between retries
     
     Returns:
@@ -54,7 +57,7 @@ def with_exponential_backoff(
     """
     return retry(
         retry=retry_if_exception_type(exception_types),
-        stop=stop_after_attempt(max_retries),
+        stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(
             multiplier=1,
             min=base_wait_seconds,

@@ -28,4 +28,5 @@ log_admin_action("admin_hash_456", "delete_user", "user_hash_789", success=True)
 # FUNCTION DECORATOR:
 @log_function_call
 async def my_function(arg1):
+    result = f"processed {arg1}"  # Your logic here
     return result
