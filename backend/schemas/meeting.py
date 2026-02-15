@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict, field_serializer
 from typing import List, Optional, Dict
 from enum import Enum
 from datetime import datetime
@@ -66,8 +66,13 @@ class MeetingMetadata(BaseModel):
     total_tokens: int = Field(default=0, description="Total tokens used")
     estimated_cost: Decimal = Field(default=Decimal("0.00"), description="Estimated cost in USD")
 
-    class Config:
-        json_encoders = {Decimal: str, datetime: str}
+    @field_serializer("estimated_cost")
+    def serialize_estimated_cost(self, value: Decimal) -> str:
+        return str(value)
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class MeetingDetail(BaseModel):
@@ -81,9 +86,15 @@ class MeetingDetail(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
 
-    class Config:
-        json_encoders = {Decimal: str, datetime: str}
-        protected_namespaces = ()
+    model_config = ConfigDict(protected_namespaces=())
+
+    @field_serializer("estimated_cost")
+    def serialize_estimated_cost(self, value: Decimal) -> str:
+        return str(value)
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class UserStats(BaseModel):
@@ -94,8 +105,17 @@ class UserStats(BaseModel):
     period_start: Optional[datetime] = None
     period_end: Optional[datetime] = None
 
-    class Config:
-        json_encoders = {Decimal: str, datetime: str}
+    @field_serializer("total_cost")
+    def serialize_total_cost(self, value: Decimal) -> str:
+        return str(value)
+
+    @field_serializer("cost_by_model")
+    def serialize_cost_by_model(self, value: Dict[str, Decimal]) -> Dict[str, str]:
+        return {key: str(cost) for key, cost in value.items()}
+
+    @field_serializer("period_start", "period_end")
+    def serialize_periods(self, value: Optional[datetime]) -> Optional[str]:
+        return value.isoformat() if value else None
 
 
 class DailyStats(BaseModel):
@@ -104,8 +124,9 @@ class DailyStats(BaseModel):
     token_count: int
     meeting_count: int
 
-    class Config:
-        json_encoders = {Decimal: str}
+    @field_serializer("cost")
+    def serialize_cost(self, value: Decimal) -> str:
+        return str(value)
 
 
 class GlobalStats(BaseModel):
@@ -117,8 +138,17 @@ class GlobalStats(BaseModel):
     period_start: Optional[datetime] = None
     period_end: Optional[datetime] = None
 
-    class Config:
-        json_encoders = {Decimal: str, datetime: str}
+    @field_serializer("total_cost")
+    def serialize_total_cost(self, value: Decimal) -> str:
+        return str(value)
+
+    @field_serializer("cost_by_model")
+    def serialize_cost_by_model(self, value: Dict[str, Decimal]) -> Dict[str, str]:
+        return {key: str(cost) for key, cost in value.items()}
+
+    @field_serializer("period_start", "period_end")
+    def serialize_periods(self, value: Optional[datetime]) -> Optional[str]:
+        return value.isoformat() if value else None
 
 
 class PaginatedMeetings(BaseModel):

@@ -1,6 +1,14 @@
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from core.config import settings
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    message=".*'crypt' is deprecated.*",
+)
+
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

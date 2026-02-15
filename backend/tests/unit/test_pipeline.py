@@ -9,7 +9,7 @@ def test_pipeline_happy_path(monkeypatch):
     )
     monkeypatch.setattr(
         "ai_engine.pipeline.extract_action_items",
-        lambda text, version="v1": [{"task": "Mock action"}]
+        lambda text: [{"task": "Mock action"}]
     )
 
     transcript = "John will prepare the report by Friday."

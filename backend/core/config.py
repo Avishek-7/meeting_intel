@@ -1,5 +1,5 @@
 from pathlib import Path
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 from typing import Optional
 import logging
@@ -49,10 +49,11 @@ class Settings(BaseSettings):
     # Security/Privacy settings
     PII_HASH_PEPPER: str = ""  # Should be set in production via environment variable
 
-    class Config:
-        # Load env from project root when running inside backend/
-        env_file = str(Path(__file__).resolve().parent.parent.parent / ".env")
-        env_file_encoding = "utf-8"
+    # Load env from project root when running inside backend/
+    model_config = SettingsConfigDict(
+        env_file=str(Path(__file__).resolve().parent.parent.parent / ".env"),
+        env_file_encoding="utf-8",
+    )
 
     @field_validator("PII_HASH_PEPPER")
     @classmethod

@@ -1,7 +1,14 @@
 import pytest
+import warnings
 from fastapi.testclient import TestClient
 from main import app
 from core.security import create_access_token
+
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    message="The 'app' shortcut is now deprecated.*",
+)
 
 client = TestClient(app)
 

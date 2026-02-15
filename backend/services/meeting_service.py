@@ -107,6 +107,16 @@ def _validate_ai_result(result: dict) -> None:
         )
         raise AIServiceError("AI service returned invalid response.")
 
+    status = result.get("status")
+    if status and status != "ok":
+        log_warning(
+            "ai_service_partial_result",
+            context={
+                "status": status,
+                "error_count": len(result.get("errors", [])),
+            },
+        )
+
     if "summary" not in result or "action_items" not in result:
         log_error(
             "ai_response_missing_fields",
