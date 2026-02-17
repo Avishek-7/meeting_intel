@@ -1,6 +1,5 @@
 from core.exceptions import ValidationError, AIServiceError
 
-
 def call_ai(prompt: str) -> dict:
     """
     Simulates AI call.

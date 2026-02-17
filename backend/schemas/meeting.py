@@ -1,15 +1,159 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator, ConfigDict, field_serializer
+from typing import List, Optional, Dict
+from enum import Enum
+from datetime import datetime
+from decimal import Decimal
+
+class PriorityLevel(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+class ActionItem(BaseModel):
+    task: str = Field(..., min_length=1, description="Action item task description")
+    owner: str = Field(default="Not specified", description="Person responsible")
+    due_date: str = Field(default="N/A", description="Due date or deadline")
+    priority: PriorityLevel = Field(default=PriorityLevel.MEDIUM, description="Priority level")
+    
+    @field_validator('task')
+    @classmethod
+    def task_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Task cannot be empty")
+        return v.strip()
 
 class MeetingRequest(BaseModel):
     title: Optional[str] = None
     transcript: str = Field(..., description="The transcript of the meeting", min_length=10)
 
-class ActionItem(BaseModel):
-    task: str
-    owner: Optional[str] = None
-    due_date: Optional[str] = None
+class MeetingSummaryBase(BaseModel):
+    summary: str = Field(..., min_length=1, description="Meeting summary")
+    action_items: List[ActionItem] = Field(default_factory=list, description="Extracted action items")
 
-class MeetingResponse(BaseModel):
+    @field_validator('summary')
+    @classmethod
+    def summary_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Summary cannot be empty")
+        return v.strip()
+
+class MeetingResponse(MeetingSummaryBase):
+    pass
+
+class MeetingJobResult(MeetingSummaryBase):
+    meeting_id: Optional[str] = None
+
+
+
+class MeetingJobEnqueueResponse(BaseModel):
+    job_id: str
+    status: str = Field(default="queued")
+
+class MeetingJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    result: Optional[MeetingJobResult] = None
+    error: Optional[str] = None
+
+
+# Meeting History & Analytics Schemas
+
+class MeetingMetadata(BaseModel):
+    id: str = Field(..., description="Meeting UUID")
+    created_at: datetime = Field(..., description="Meeting creation timestamp")
+    summary_preview: str = Field(..., description="First 200 chars of summary")
+    action_count: int = Field(..., description="Number of action items")
+    total_tokens: int = Field(default=0, description="Total tokens used")
+    estimated_cost: Decimal = Field(default=Decimal("0.00"), description="Estimated cost in USD")
+
+    @field_serializer("estimated_cost")
+    def serialize_estimated_cost(self, value: Decimal) -> str:
+        return str(value)
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return value.isoformat()
+
+
+class MeetingDetail(BaseModel):
+    id: str
+    created_at: datetime
     summary: str
     action_items: List[ActionItem]
+    total_tokens: int
+    estimated_cost: Decimal
+    model_name: Optional[str] = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    @field_serializer("estimated_cost")
+    def serialize_estimated_cost(self, value: Decimal) -> str:
+        return str(value)
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return value.isoformat()
+
+
+class UserStats(BaseModel):
+    total_cost: Decimal
+    total_tokens: int
+    total_meetings: int
+    cost_by_model: Dict[str, Decimal]
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+
+    @field_serializer("total_cost")
+    def serialize_total_cost(self, value: Decimal) -> str:
+        return str(value)
+
+    @field_serializer("cost_by_model")
+    def serialize_cost_by_model(self, value: Dict[str, Decimal]) -> Dict[str, str]:
+        return {key: str(cost) for key, cost in value.items()}
+
+    @field_serializer("period_start", "period_end")
+    def serialize_periods(self, value: Optional[datetime]) -> Optional[str]:
+        return value.isoformat() if value else None
+
+
+class DailyStats(BaseModel):
+    date: str
+    cost: Decimal
+    token_count: int
+    meeting_count: int
+
+    @field_serializer("cost")
+    def serialize_cost(self, value: Decimal) -> str:
+        return str(value)
+
+
+class GlobalStats(BaseModel):
+    total_cost: Decimal
+    total_users: int
+    total_meetings: int
+    total_tokens: int
+    cost_by_model: Dict[str, Decimal]
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+
+    @field_serializer("total_cost")
+    def serialize_total_cost(self, value: Decimal) -> str:
+        return str(value)
+
+    @field_serializer("cost_by_model")
+    def serialize_cost_by_model(self, value: Dict[str, Decimal]) -> Dict[str, str]:
+        return {key: str(cost) for key, cost in value.items()}
+
+    @field_serializer("period_start", "period_end")
+    def serialize_periods(self, value: Optional[datetime]) -> Optional[str]:
+        return value.isoformat() if value else None
+
+
+class PaginatedMeetings(BaseModel):
+    items: List[MeetingMetadata]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool

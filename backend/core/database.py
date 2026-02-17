@@ -1,7 +1,12 @@
+from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import create_engine 
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 from core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 sync_engine = create_engine(settings.DATABASE_URL, echo=False, future=True)
 SyncSessionLocal = sessionmaker(bind=sync_engine, autoflush=False, autocommit=False)
@@ -12,6 +17,8 @@ def get_sync_db():
 
 def _get_async_db_url(sync_url: str) -> str:
     """Convert sync database URL to async database URL."""
+    scheme = sync_url.split(":", 1)[0] if sync_url else "unknown"
+    logger.debug("Converting database URL to async driver (scheme=%s).", scheme)
     if sync_url.startswith("postgresql://"):
         return sync_url.replace("postgresql://", "postgresql+asyncpg://")
     elif sync_url.startswith("postgres://"):
@@ -32,10 +39,17 @@ AsyncSessionLocal = async_sessionmaker(
 
 Base = declarative_base()
 
-async def get_db():
+# Import models to register them with SQLAlchemy
+from models import Meeting, User, UsageRecord  # noqa: E402
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    logger.debug("Opening async database session.")
     async with AsyncSessionLocal() as session:
         try:
             yield session
+        except SQLAlchemyError as e:
+            logger.error("Database error during session.", exc_info=True)
+            raise
         finally:
-            await session.close()
+            logger.debug("Closing async database session.")
 
