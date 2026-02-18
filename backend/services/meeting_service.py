@@ -450,13 +450,18 @@ async def get_meeting_detail(
             raise NotFoundError("Meeting not found or access denied.")
         
         # Get aggregated usage info (sum across multiple usage records)
+        # Use subquery to get most recent model name instead of max (which is lexicographic)
+        most_recent_model = select(UsageRecord.model_name).where(
+            UsageRecord.meeting_id == meeting.id
+        ).order_by(UsageRecord.created_at.desc()).limit(1).scalar_subquery()
+        
         usage_result = await db.execute(
             select(
                 func.sum(UsageRecord.total_tokens).label('total_tokens'),
                 func.sum(UsageRecord.estimated_cost).label('estimated_cost'),
                 func.sum(UsageRecord.prompt_tokens).label('prompt_tokens'),
                 func.sum(UsageRecord.completion_tokens).label('completion_tokens'),
-                func.max(UsageRecord.model_name).label('model_name')
+                most_recent_model.label('model_name')
             ).where(UsageRecord.meeting_id == meeting.id)
         )
         usage_row = usage_result.one_or_none()

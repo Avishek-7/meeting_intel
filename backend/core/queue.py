@@ -23,7 +23,7 @@ def sanitize_redis_url(url: str) -> str:
             # Password exists but hostname is missing/invalid
             return "redis://***:***@<host>:<port>"
         return url
-        return url
+        
     except Exception:
         # If sanitization fails, return a generic placeholder
         return "redis://***:***@<host>:<port>"
