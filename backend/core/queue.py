@@ -12,13 +12,17 @@ def sanitize_redis_url(url: str) -> str:
     """Sanitize Redis URL by masking password to prevent credential leakage in logs."""
     try:
         parsed = urlparse(url)
-        if parsed.password:
+        if parsed.password and parsed.hostname:
             # Replace password with asterisks
             netloc = f"{parsed.username}:***@{parsed.hostname}"
             if parsed.port:
                 netloc += f":{parsed.port}"
             sanitized = parsed._replace(netloc=netloc)
             return urlunparse(sanitized)
+        elif parsed.password:
+            # Password exists but hostname is missing/invalid
+            return "redis://***:***@<host>:<port>"
+        return url
         return url
     except Exception:
         # If sanitization fails, return a generic placeholder

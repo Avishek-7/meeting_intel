@@ -25,6 +25,7 @@ if not _HASH_PEPPER:
     _logger.warning(
         "PII_HASH_PEPPER is not set. Hashed identifiers are vulnerable to enumeration attacks."
     )
+    _HASH_PEPPER = ""  # Fallback to empty string in non-production
 
 
 def hash_user_id(user_id: Union[str, uuid.UUID]) -> str:
