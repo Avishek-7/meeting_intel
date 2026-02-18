@@ -449,22 +449,28 @@ async def get_meeting_detail(
             logger.warning("meeting_not_found", user_hash=hash_user_id(user_uuid))
             raise NotFoundError("Meeting not found or access denied.")
         
-        # Get usage info
+        # Get aggregated usage info (sum across multiple usage records)
         usage_result = await db.execute(
-            select(UsageRecord).where(UsageRecord.meeting_id == meeting.id)
+            select(
+                func.sum(UsageRecord.total_tokens).label('total_tokens'),
+                func.sum(UsageRecord.estimated_cost).label('estimated_cost'),
+                func.sum(UsageRecord.prompt_tokens).label('prompt_tokens'),
+                func.sum(UsageRecord.completion_tokens).label('completion_tokens'),
+                func.max(UsageRecord.model_name).label('model_name')
+            ).where(UsageRecord.meeting_id == meeting.id)
         )
-        usage_record = usage_result.scalar_one_or_none()
+        usage_row = usage_result.one_or_none()
         
         return {
             "id": str(meeting.id),
             "created_at": meeting.created_at,
             "summary": meeting.summary_text,
             "action_items": meeting.action_items or [],
-            "total_tokens": usage_record.total_tokens if usage_record else 0,
-            "estimated_cost": usage_record.estimated_cost if usage_record else 0,
-            "model_name": usage_record.model_name if usage_record else None,
-            "prompt_tokens": usage_record.prompt_tokens if usage_record else 0,
-            "completion_tokens": usage_record.completion_tokens if usage_record else 0
+            "total_tokens": usage_row.total_tokens if usage_row and usage_row.total_tokens else 0,
+            "estimated_cost": usage_row.estimated_cost if usage_row and usage_row.estimated_cost else 0,
+            "model_name": usage_row.model_name if usage_row else None,
+            "prompt_tokens": usage_row.prompt_tokens if usage_row and usage_row.prompt_tokens else 0,
+            "completion_tokens": usage_row.completion_tokens if usage_row and usage_row.completion_tokens else 0
         }
     
     except NotFoundError:

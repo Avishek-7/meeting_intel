@@ -8,6 +8,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def normalize_email(email: str) -> str:
+    """Normalize email by stripping whitespace and converting to lowercase."""
+    return email.strip().lower()
+
 async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
     """
     Get existing user by email or create a new one.
@@ -20,9 +25,12 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
         User object
     """
     try:
+        # Normalize email for consistent querying and storage
+        normalized_email = normalize_email(email)
+        
         # Try to find existing user
         result = await db.execute(
-            select(User).where(User.email == email)
+            select(User).where(User.email == normalized_email)
         )
         user = result.scalar_one_or_none()
         
@@ -30,10 +38,10 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
             logger.info("Found existing user")
             return user
         
-        # Create new user
+        # Create new user with normalized email
         user = User(
             id=uuid.uuid4(),
-            email=email
+            email=normalized_email
         )
         db.add(user)
         await db.commit()
@@ -46,8 +54,9 @@ async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:
         # Handle race condition - another request created the user
         await db.rollback()
         try:
+            normalized_email = normalize_email(email)
             result = await db.execute(
-                select(User).where(User.email == email)
+                select(User).where(User.email == normalized_email)
             )
             user = result.scalar_one_or_none()
             if user:
@@ -95,8 +104,9 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
         User object or None if not found
     """
     try:
+        normalized_email = normalize_email(email)
         result = await db.execute(
-            select(User).where(User.email == email)
+            select(User).where(User.email == normalized_email)
         )
         return result.scalar_one_or_none()
     except SQLAlchemyError as e:

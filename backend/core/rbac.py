@@ -9,7 +9,7 @@ Provides:
 """
 
 from enum import Enum
-from typing import Set, Optional
+from typing import Set, Optional, FrozenSet
 from functools import lru_cache
 import logging
 
@@ -65,7 +65,7 @@ ROLE_PERMISSIONS: dict[Role, Set[Permission]] = {
 
 
 @lru_cache(maxsize=128)
-def get_role_permissions(role: Role) -> Set[Permission]:
+def get_role_permissions(role: Role) -> FrozenSet[Permission]:
     """Get all permissions for a given role."""
     return frozenset(ROLE_PERMISSIONS.get(role, set()))
 

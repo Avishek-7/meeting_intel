@@ -101,6 +101,6 @@ async def track_ai_usage(
         return usage_record
         
     except SQLAlchemyError as e:
-        logger.error("usage_track_failed", error=str(e), exc_info=True)
+        logger.error("usage_track_failed", error_type=type(e).__name__, exc_info=False)
         await db.rollback()
         raise
