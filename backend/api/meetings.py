@@ -71,6 +71,11 @@ async def process_meeting(
         email = current_user.get("email") or f"{username}@meetingintel.local"
         user = await get_or_create_user_by_email(db, email)
         
+        estimated_tokens = estimate_token_count(request.transcript)
+        if estimated_tokens > settings.MAX_TRANSCRIPT_TOKENS:
+            raise ValidationError("Transcript exceeds the maximum token limit.")
+        await enforce_daily_usage_limits(db, user.id, estimated_tokens=estimated_tokens)
+        
         return await process_meeting_transcript(request.transcript, db, str(user.id))
     
     except ValidationError as e:

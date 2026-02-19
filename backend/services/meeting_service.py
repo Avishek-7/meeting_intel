@@ -151,22 +151,15 @@ async def process_meeting_transcript(
     
     logger.info("process_meeting_start", transcript_length=len(transcript), user_hash=hash_user_id(user_uuid))
     
-    # Business rule validation
+    # Basic validation
     if len(transcript) < 10:
         logger.warning("transcript_too_short")
         raise ValidationError("Transcript is too short to process.")
 
-    estimated_tokens = estimate_token_count(transcript)
-    if estimated_tokens > settings.MAX_TRANSCRIPT_TOKENS:
-        logger.warning("transcript_token_cap_exceeded")
-        raise ValidationError("Transcript exceeds the maximum token limit.")
-
-    await enforce_daily_usage_limits(db, user_uuid, estimated_tokens=estimated_tokens)
-
     # Calculate transcript hash for deduplication
     transcript_hash = generate_transcript_hash(transcript)
     
-    # Check database FIRST to avoid unnecessary AI processing
+    # Check database FIRST to avoid unnecessary token estimation and limit enforcement for duplicates
     logger.info("checking_existing_meeting")
     db_check_start = time.perf_counter()
     existing = await db.execute(
@@ -188,6 +181,14 @@ async def process_meeting_transcript(
             summary=existing_meeting.summary_text,
             action_items=existing_meeting.action_items or [],
         )
+
+    # Only validate tokens and enforce limits for NEW transcripts (not duplicates)
+    estimated_tokens = estimate_token_count(transcript)
+    if estimated_tokens > settings.MAX_TRANSCRIPT_TOKENS:
+        logger.warning("transcript_token_cap_exceeded")
+        raise ValidationError("Transcript exceeds the maximum token limit.")
+
+    await enforce_daily_usage_limits(db, user_uuid, estimated_tokens=estimated_tokens)
 
     # Meeting doesn't exist - proceed with AI processing
     cache_key = meeting_cache_key(transcript)

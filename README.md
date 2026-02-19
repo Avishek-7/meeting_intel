@@ -159,9 +159,16 @@ pip install -r requirements.txt
 2) Configure environment variables (create `.env` in repo root)
 
 ```env
+# Required (all environments)
 JWT_SECRET_KEY="your-secret-key"
 DATABASE_URL="postgresql+psycopg2://user:password@localhost/meeting_intel_db"
 OPENAI_API_KEY="your-openai-api-key"
+
+# Required for production deployment
+PII_HASH_PEPPER="your-cryptographically-secure-random-string"  # Generate: openssl rand -hex 32
+
+# Optional (recommended for async processing and caching)
+redis_url="redis://localhost:6379/0"
 ```
 
 3) Initialize the database
@@ -311,10 +318,13 @@ curl -X GET "http://localhost:8000/meetings/jobs/<job_id>" \
 
 These are read from `.env` at the repo root by default.
 
-Required:
+Required (all environments):
 - `JWT_SECRET_KEY`
 - `DATABASE_URL`
 - `OPENAI_API_KEY`
+
+Required (production only):
+- `PII_HASH_PEPPER` — Application startup will fail if `ENVIRONMENT=production` and this is not set
 
 Auth and JWT:
 - `JWT_ALGORITHM` (default: `HS256`)
@@ -357,7 +367,11 @@ Celery (unused in current code paths):
 - `celery_result_backend` (default: `None`)
 
 Privacy:
-- `PII_HASH_PEPPER` (default: empty string; required in production)
+- `PII_HASH_PEPPER` (default: empty string for development; **MANDATORY in production**)
+  - **Production behavior**: Application will fail to start if `ENVIRONMENT=production` and `PII_HASH_PEPPER` is not set or empty
+  - **Security requirement**: Must be a cryptographically secure random string (32+ characters recommended)
+  - **Purpose**: Prevents enumeration attacks on hashed PII (user IDs, meeting IDs)
+  - **Generation example**: `openssl rand -hex 32` or `python -c "import secrets; print(secrets.token_hex(32))"`
 
 Daily caps:
 - `DAILY_TOKEN_CAP` (default: `None`)

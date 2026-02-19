@@ -3,6 +3,7 @@ import time
 import threading
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from cachetools import TTLCache
 from core.cache import get_redis_client
 from core.security import verify_access_token
 from core.config import settings
@@ -11,7 +12,10 @@ logger = logging.getLogger(__name__)
 
 _EXEMPT_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
 
-_MEMORY_LIMITS: dict[str, dict[str, int]] = {}
+# Bounded cache with TTL to prevent unbounded growth
+# maxsize: max number of unique rate-limit keys
+# ttl: entries expire after 5 minutes (covers multiple rate-limit windows)
+_MEMORY_LIMITS: TTLCache = TTLCache(maxsize=10000, ttl=300)
 _MEMORY_LOCK = threading.Lock()
 
 
@@ -29,7 +33,36 @@ def _get_identifier(request: Request) -> tuple[str, bool]:
         if payload and payload.get("sub"):
             return f"user:{payload['sub']}", True
 
-    client_ip = request.client.host if request.client else "unknown"
+    # Extract client IP from proxy headers first, then fallback
+    client_ip = None
+    
+    # Try X-Forwarded-For (take leftmost/first IP)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # X-Forwarded-For can be comma-separated list: client, proxy1, proxy2
+        first_ip = forwarded_for.split(",")[0].strip()
+        if first_ip:
+            client_ip = first_ip
+    
+    # Try X-Real-IP
+    if not client_ip:
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            client_ip = real_ip.strip()
+    
+    # Fallback to request.client.host
+    if not client_ip and request.client:
+        client_ip = request.client.host
+    
+    # If still no IP, generate a unique identifier per request
+    # to avoid grouping unrelated clients in a shared bucket
+    if not client_ip:
+        import hashlib
+        header_hash = hashlib.sha256(
+            str(sorted(request.headers.items())).encode()
+        ).hexdigest()[:16]
+        client_ip = f"unknown-{header_hash}"
+    
     return f"ip:{client_ip}", False
 
 
@@ -44,8 +77,8 @@ def _redis_increment(key: str, window_seconds: int) -> int | None:
         pipe.expire(key, window_seconds)
         count, _ = pipe.execute()
         return int(count)
-    except Exception as exc:
-        logger.warning("rate_limit_redis_failed", extra={"error": str(exc)})
+    except Exception as e:
+        logger.warning(f"Redis rate limit failed: {e}")
         return None
 
 
