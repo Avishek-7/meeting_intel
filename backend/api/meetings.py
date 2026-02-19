@@ -26,12 +26,15 @@ from services.analytics_service import (
     get_global_daily_stats,
     parse_date_range,
 )
+from services.usage_service import enforce_daily_usage_limits
 from services.user_service import get_or_create_user_by_email
 from core.exceptions import ValidationError, AIServiceError, DatabaseError, NotFoundError
 from core.dependencies import get_current_user
 from core.authorization import get_admin_user
 from core.rbac import log_admin_action
 from core.database import get_db
+from core.transcript import estimate_token_count
+from core.config import settings
 from core.queue import redis_client as queue_redis_client
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
@@ -120,6 +123,11 @@ async def enqueue_meeting_analysis(
     try:
         email = current_user.get("email") or f"{username}@meetingintel.local"
         user = await get_or_create_user_by_email(db, email)
+
+        estimated_tokens = estimate_token_count(request.transcript)
+        if estimated_tokens > settings.MAX_TRANSCRIPT_TOKENS:
+            raise ValidationError("Transcript exceeds the maximum token limit.")
+        await enforce_daily_usage_limits(db, user.id, estimated_tokens=estimated_tokens)
         job_id = enqueue_meeting_analysis_job(request.transcript, str(user.id))
         return MeetingJobEnqueueResponse(job_id=job_id)
     except ValidationError as e:

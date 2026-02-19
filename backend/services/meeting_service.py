@@ -11,20 +11,21 @@ from models.usage_record import UsageRecord
 from core.cache import get_redis_client
 from core.cache_keys import meeting_cache_key
 from core.cache_invalidation import invalidate_meeting_cache
-from services.usage_service import track_ai_usage
+from services.usage_service import track_ai_usage, enforce_daily_usage_limits
 from core.queue import default_queue
 from core.privacy import hash_user_id, hash_meeting_id
 from core.log_utils import log_error, log_info, log_warning, log_operation
 import json
 import structlog
 import time
-from core.transcript import generate_transcript_hash
+from core.transcript import generate_transcript_hash, estimate_token_count
+from core.config import settings
 import uuid
 
 logger = structlog.get_logger("services.meeting_service")
 redis_client = get_redis_client()
 
-CACHE_TTL_SECONDS = 60 * 10 # 10 minutes
+CACHE_TTL_SECONDS = settings.MEETING_CACHE_TTL_SECONDS
 
 def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
     """
@@ -154,6 +155,13 @@ async def process_meeting_transcript(
     if len(transcript) < 10:
         logger.warning("transcript_too_short")
         raise ValidationError("Transcript is too short to process.")
+
+    estimated_tokens = estimate_token_count(transcript)
+    if estimated_tokens > settings.MAX_TRANSCRIPT_TOKENS:
+        logger.warning("transcript_token_cap_exceeded")
+        raise ValidationError("Transcript exceeds the maximum token limit.")
+
+    await enforce_daily_usage_limits(db, user_uuid, estimated_tokens=estimated_tokens)
 
     # Calculate transcript hash for deduplication
     transcript_hash = generate_transcript_hash(transcript)

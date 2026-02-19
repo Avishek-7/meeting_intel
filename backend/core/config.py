@@ -2,6 +2,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator, ValidationInfo
 from typing import Optional
+from decimal import Decimal
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,22 @@ class Settings(BaseSettings):
     OPENAI_TEMPERATURE: float = 0.3
     OPENAI_REQUEST_TIMEOUT: int = 30  # seconds
     OPENAI_MAX_TOKENS_PER_REQUEST: int = 2000
+    MAX_TRANSCRIPT_TOKENS: int = 12000
     
     OPENAI_MAX_RETRIES: int = 3
     OPENAI_RETRY_BASE_WAIT: int = 2  # seconds
+
+    # Cache tuning
+    MEETING_CACHE_TTL_SECONDS: int = 600
+
+    # Rate limiting and abuse protection
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_MAX_REQUESTS: int = 60
+    RATE_LIMIT_MAX_REQUESTS_ANON: int = 30
+
+    # Daily caps (set to None to disable)
+    DAILY_TOKEN_CAP: Optional[int] = 30000
+    DAILY_COST_CAP_USD: Optional[Decimal] = 3.00
 
     # Celery settings
     celery_broker_url: Optional[str] = None
