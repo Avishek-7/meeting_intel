@@ -1,4 +1,5 @@
 from typing import AsyncGenerator
+from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import create_engine 
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -48,6 +49,20 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         except SQLAlchemyError as e:
+            logger.error("Database error during session.", exc_info=True)
+            raise
+        finally:
+            logger.debug("Closing async database session.")
+
+
+@asynccontextmanager
+async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    """Return an async DB session context manager for background jobs."""
+    logger.debug("Opening async database session.")
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except SQLAlchemyError:
             logger.error("Database error during session.", exc_info=True)
             raise
         finally:

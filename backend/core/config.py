@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     OPENAI_MAX_RETRIES: int = 3
     OPENAI_RETRY_BASE_WAIT: int = 2  # seconds
 
+    GOOGLE_API_KEY: str
+    GOOGLE_MODEL: str = "gemini-2.5-pro"
+    GOOGLE_FALLBACK_MODEL: str = "gemini-2.5-flash"
+
+    GOOGLE_API_TIMEOUT_SECONDS: int = 30
+    GOOGLE_TEMPERATURE: float = 0.3
+    GOOGLE_MAX_TOKENS_PER_REQUEST: int = 2000
+    GOOGLE_MAX_RETRIES: int = 3
+    GOOGLE_RETRY_BASE_WAIT: int = 2  # seconds
+
+
     # Cache tuning
     MEETING_CACHE_TTL_SECONDS: int = 600
 
