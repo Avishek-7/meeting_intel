@@ -20,11 +20,13 @@ from core.retry import with_exponential_backoff
 logger = structlog.get_logger("ai_engine.google_llm")
 
 _usage_tracker: ContextVar[dict] = ContextVar("usage_tracker", default=None)
-_useage_tracker = _usage_tracker
 
-client = genai.Client(
-    api_key=settings.GOOGLE_API_KEY,
-)
+# Initialize client only if API key is configured
+client = None
+if settings.GOOGLE_API_KEY:
+    client = genai.Client(
+        api_key=settings.GOOGLE_API_KEY,
+    )
 
 SYSTEM_PROMPT = (
     "You are a precise, reliable AI assistant specialized in "
@@ -47,6 +49,9 @@ _retry_google = with_exponential_backoff(
 
 @_retry_google
 def _call_google_api(prompt: str) -> tuple[str, dict]:
+    if client is None:
+        raise AIServiceError("Google API client not initialized. GOOGLE_API_KEY may not be configured.")
+    
     response = client.models.generate_content(
         model=DEFAULT_MODEL,
         contents=prompt,

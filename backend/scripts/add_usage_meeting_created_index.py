@@ -28,6 +28,7 @@ def mask_db_url(db_url: str) -> str:
 
 
 def apply_index() -> bool:
+    engine = None
     try:
         db_url = settings.DATABASE_URL
         if db_url.startswith("postgresql+asyncpg"):
@@ -45,7 +46,6 @@ def apply_index() -> bool:
             )
 
         logger.info("Index creation complete")
-        engine.dispose()
         return True
 
     except OperationalError as exc:
@@ -54,6 +54,9 @@ def apply_index() -> bool:
     except Exception as exc:
         logger.error("Index creation failed", error=str(exc), exc_info=True)
         return False
+    finally:
+        if engine is not None:
+            engine.dispose()
 
 
 def main() -> None:

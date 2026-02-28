@@ -1,12 +1,34 @@
 # MeetingIntel
 
-MeetingIntel is an AI-powered meeting transcript analysis platform that generates concise summaries and extracts actionable tasks. The backend is built with FastAPI, SQLAlchemy, PostgreSQL, and OpenAI, and supports both synchronous and asynchronous processing with optional Redis caching and RQ background jobs.
+MeetingIntel is an AI-powered meeting transcript analysis platform that generates concise summaries and extracts actionable tasks. The backend is built with FastAPI, SQLAlchemy, PostgreSQL, and supports both **OpenAI** and **Google Genai** LLM providers with synchronous and asynchronous processing via Redis caching and RQ background jobs.
+
+## Recent Updates
+
+### 🎉 New Features
+
+- **Google Genai (Gemini) Support**: Full integration with Google's Gemini models alongside OpenAI
+- **LLM Provider Comparison Tool**: Side-by-side comparison utility for testing both providers
+- **Integrated Development Server**: Single-command startup with API + worker + monitoring ([`start_dev.sh`](backend/scripts/start_dev.sh))
+- **Real-time Worker Monitoring**: Heartbeat system showing queue stats and worker health
+- **Enhanced Queue Management**: Utilities for requeuing failed jobs and managing worker conflicts
+- **Portable Development Scripts**: Auto-detection of Python/RQ paths for cross-platform development
+
+### 🔧 Recent Improvements
+
+- **Dependency Version Constraints**: Bounded `httpx` and `openai` versions to prevent breaking changes
+- **Timezone-aware Datetime**: Replaced deprecated `utcnow()` with `timezone.utc` throughout
+- **Robust Error Handling**: Null-safe email normalization and improved exception handling
+- **Resource Cleanup**: Proper database engine disposal in scripts with `finally` blocks
+- **Environment Variable Consistency**: Standardized to uppercase naming with backward compatibility
+- **Optional API Keys**: GOOGLE_API_KEY now optional for deployments using only OpenAI
 
 ## Highlights
 
+- **Dual LLM Provider Support**: Choose between OpenAI (GPT) or Google Genai (Gemini) with easy provider switching
 - **Meeting analysis**: Summary + action items with validation and fallbacks
-- **Async processing**: Background analysis via RQ + Redis
+- **Async processing**: Background analysis via RQ + Redis with worker monitoring
 - **Analytics**: User and global usage statistics and daily breakdowns
+- **Development Tools**: Integrated dev server with heartbeat monitoring, provider comparison utilities
 - **Observability**: Structured logging with request IDs and correlation IDs
 - **Abuse protection**: Rate limiting, token caps, and daily usage caps
 - **Security**: JWT-based auth, bcrypt password hashing, and Pydantic validation
@@ -22,7 +44,7 @@ flowchart TD
   D --> E
   E --> F[Redis Cache]
   E --> G[LLM Pipeline]
-  G --> H[OpenAI]
+  G --> H[OpenAI / Google Genai]
   E --> I[(PostgreSQL)]
   E --> J[Usage Records]
   B --> K[Response]
@@ -134,6 +156,11 @@ meeting-intel/
 │   ├── models/                 # SQLAlchemy models
 │   ├── schemas/                # Pydantic schemas
 │   ├── services/               # Business logic
+│   ├── scripts/                # Development and utility scripts
+│   │   ├── start_dev.sh        # Combined API + worker with monitoring
+│   │   ├── compare_llm_responses.py  # LLM provider comparison tool
+│   │   ├── requeue_failed_import_jobs.py  # Queue management utility
+│   │   └── add_usage_meeting_created_index.py  # Database indexing
 │   └── tests/                  # Test suite
 ├── requirements.txt
 └── README.md
@@ -143,8 +170,8 @@ meeting-intel/
 
 - Python 3.10+
 - PostgreSQL
-- OpenAI API key
-- Redis (optional, for caching and async jobs)
+- OpenAI API key **OR** Google Genai API key (depending on chosen provider)
+- Redis (required for async jobs and caching)
 
 ## Setup
 
@@ -161,14 +188,17 @@ pip install -r requirements.txt
 ```env
 # Required (all environments)
 JWT_SECRET_KEY="your-secret-key"
-DATABASE_URL="postgresql+psycopg2://user:password@localhost/meeting_intel_db"
-OPENAI_API_KEY="your-openai-api-key"
+DATABASE_URL="postgresql+asyncpg://user:password@localhost/meeting_intel_db"
+
+# LLM Provider - Configure ONE of these based on your chosen provider:
+GOOGLE_API_KEY="your-google-genai-api-key"  # For Google Genai (Gemini)
+# OPENAI_API_KEY="your-openai-api-key"      # For OpenAI (GPT)
 
 # Required for production deployment
 PII_HASH_PEPPER="your-cryptographically-secure-random-string"  # Generate: openssl rand -hex 32
 
-# Optional (recommended for async processing and caching)
-redis_url="redis://localhost:6379/0"
+# Required for async processing and caching
+REDIS_URL="redis://localhost:6379/0"
 ```
 
 3) Initialize the database
@@ -179,18 +209,54 @@ createdb meeting_intel_db
 
 4) Run the API
 
+**Option A: Using the integrated development script (recommended)**
+
 ```bash
 cd backend
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+bash scripts/start_dev.sh
 ```
 
-API runs at `http://localhost:8000`.
+This starts both the API server and RQ worker with heartbeat monitoring. API runs at `http://localhost:8003`.
+
+**Option B: Run API only**
+
+```bash
+cd backend
+uvicorn main:app --reload --host 0.0.0.0 --port 8003
+```
+
+API runs at `http://localhost:8003`.
 
 ## Running the RQ Worker (Async Jobs)
 
-Async analysis uses RQ + Redis. Ensure `redis_url` is set in `.env`, then run a worker:
+Async analysis uses RQ + Redis. Ensure `REDIS_URL` is set in `.env`.
+
+**Option A: Using the integrated development script (recommended)**
+
+The `start_dev.sh` script automatically starts an RQ worker alongside the API:
 
 ```bash
+cd backend
+bash scripts/start_dev.sh
+```
+
+Features:
+- Automatic worker startup with correct PYTHONPATH
+- Heartbeat monitoring showing queue statistics
+- Detection of existing workers to prevent conflicts
+- Graceful shutdown of both API and worker
+
+Environment variables for the script:
+- `HEARTBEAT_SECONDS` (default: `5`) - Monitoring interval
+- `KILL_EXISTING_WORKERS` (default: `0`) - Set to `1` to kill any existing workers on startup
+- `PYTHON_BIN` - Python interpreter path (auto-detected)
+- `RQ_BIN` - RQ command path (auto-detected)
+
+**Option B: Run worker manually**
+
+```bash
+cd backend
+export PYTHONPATH=/path/to/meeting-intel/backend
 rq worker default
 ```
 
@@ -199,6 +265,7 @@ rq worker default
 - Run multiple workers to increase throughput (one job per worker process).
 - Separate queues for heavy vs. light jobs if analysis time varies.
 - Example: `rq worker default high` to process multiple queues.
+- Use `KILL_EXISTING_WORKERS=1` when running the dev script to ensure clean single-worker environment.
 
 ## API Reference
 
@@ -230,7 +297,7 @@ rq worker default
 ### Login
 
 ```bash
-curl -X POST "http://localhost:8000/auth/login" \
+curl -X POST "http://localhost:8003/auth/login" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=avishek&password=secret123"
 ```
@@ -238,7 +305,7 @@ curl -X POST "http://localhost:8000/auth/login" \
 ### Analyze a Meeting (Sync)
 
 ```bash
-curl -X POST "http://localhost:8000/meetings/analyze" \
+curl -X POST "http://localhost:8003/meetings/analyze" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
   -d '{"title":"Team Standup","transcript":"Meeting transcript text here..."}'
@@ -247,7 +314,7 @@ curl -X POST "http://localhost:8000/meetings/analyze" \
 ### Analyze a Meeting (Async)
 
 ```bash
-curl -X POST "http://localhost:8000/meetings/analyze-async" \
+curl -X POST "http://localhost:8003/meetings/analyze-async" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
   -d '{"title":"Team Standup","transcript":"Meeting transcript text here..."}'
@@ -256,7 +323,7 @@ curl -X POST "http://localhost:8000/meetings/analyze-async" \
 ### Check Job Status
 
 ```bash
-curl -X GET "http://localhost:8000/meetings/jobs/<job_id>" \
+curl -X GET "http://localhost:8003/meetings/jobs/<job_id>" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -290,6 +357,42 @@ curl -X GET "http://localhost:8000/meetings/jobs/<job_id>" \
 
 ## AI Pipeline Details
 
+### LLM Provider Configuration
+
+MeetingIntel supports two LLM providers that can be easily switched:
+
+**Current Default**: Google Genai (Gemini)
+
+**Supported Providers**:
+- **Google Genai**: Uses Gemini models (gemini-2.5-pro, gemini-2.5-flash)
+- **OpenAI**: Uses GPT models (gpt-4o-mini, gpt-3.5-turbo, gpt-4)
+
+**Switching Providers**:
+
+1. Update your `.env` file with the appropriate API key:
+   ```env
+   # For Google Genai
+   GOOGLE_API_KEY="your-google-api-key"
+   
+   # For OpenAI
+   # OPENAI_API_KEY="your-openai-api-key"
+   ```
+
+2. Update the import in [`backend/ai_engine/pipeline.py`](backend/ai_engine/pipeline.py#L3):
+   ```python
+   # For Google Genai (current default)
+   from ai_engine.google_llm import generate_response, summarize_text, extract_action_items
+   
+   # For OpenAI
+   # from ai_engine.llm import generate_response, summarize_text, extract_action_items
+   ```
+
+3. Restart the application
+
+Both providers implement the same interface, ensuring seamless switching without code changes beyond the import statement.
+
+### Pipeline Steps
+
 1) **Preprocessing**: normalize whitespace in transcripts
 2) **Chunking**: split long transcripts into word-based chunks
 3) **Summarization**: prompt-driven summarization with JSON fallback parsing
@@ -310,9 +413,15 @@ curl -X GET "http://localhost:8000/meetings/jobs/<job_id>" \
 
 ## Observability
 
-- Request logging with correlation IDs and request IDs.
-- Structured logs using structlog with Rich output.
-- Sensitive query parameters are redacted in logs.
+- **Request logging** with correlation IDs and request IDs for end-to-end request tracing
+- **Structured logs** using structlog with Rich output for development environments
+- **Sensitive data redaction**: Query parameters and PII are automatically redacted in logs
+- **Background job monitoring**: Real-time heartbeat monitoring when using `start_dev.sh`:
+  - Queue statistics (queued, executing, finished, failed counts)
+  - Worker status and process IDs
+  - Existing worker detection to prevent conflicts
+- **Token and cost tracking**: Usage metadata captured for each LLM call
+- **Health check endpoint** at `/health` for monitoring and load balancer probes
 
 ## Configuration and Environment Variables
 
@@ -321,7 +430,8 @@ These are read from `.env` at the repo root by default.
 Required (all environments):
 - `JWT_SECRET_KEY`
 - `DATABASE_URL`
-- `OPENAI_API_KEY`
+
+**Note**: Either `OPENAI_API_KEY` or `GOOGLE_API_KEY` must be configured depending on which LLM provider is used in the pipeline.
 
 Required (production only):
 - `PII_HASH_PEPPER` — Application startup will fail if `ENVIRONMENT=production` and this is not set
@@ -336,10 +446,11 @@ Auth and JWT:
 - `AUTH_COOKIE_PATH` (default: `/`)
 
 App:
-- `app_name` (default: `MeetingIntel`)
+- `APP_NAME` (default: `MeetingIntel`)
 - `ENVIRONMENT` (default: `development`)
 
 OpenAI:
+- `OPENAI_API_KEY` (optional if using Google Genai)
 - `OPENAI_MODEL` (default: `gpt-4o-mini`)
 - `OPENAI_FALLBACK_MODEL` (default: `gpt-3.5-turbo`)
 - `OPENAI_TEMPERATURE` (default: `0.3`)
@@ -348,6 +459,16 @@ OpenAI:
 - `MAX_TRANSCRIPT_TOKENS` (default: `12000`)
 - `OPENAI_MAX_RETRIES` (default: `3`)
 - `OPENAI_RETRY_BASE_WAIT` (default: `2`)
+
+Google Genai:
+- `GOOGLE_API_KEY` (optional if using OpenAI)
+- `GOOGLE_MODEL` (default: `gemini-2.5-pro`)
+- `GOOGLE_FALLBACK_MODEL` (default: `gemini-2.5-flash`)
+- `GOOGLE_API_TIMEOUT_SECONDS` (default: `30`)
+- `GOOGLE_TEMPERATURE` (default: `0.3`)
+- `GOOGLE_MAX_TOKENS_PER_REQUEST` (default: `2000`)
+- `GOOGLE_MAX_RETRIES` (default: `3`)
+- `GOOGLE_RETRY_BASE_WAIT` (default: `2`)
 
 Cache:
 - `MEETING_CACHE_TTL_SECONDS` (default: `600`)
@@ -358,13 +479,15 @@ Rate limiting:
 - `RATE_LIMIT_MAX_REQUESTS_ANON` (default: `30`)
 
 Redis and queueing:
-- `redis_url` (default: `None`)
-- `redis_socket_timeout` (default: `5`)
-- `redis_socket_connect_timeout` (default: `5`)
+- `REDIS_URL` (default: `None`)
+- `REDIS_SOCKET_TIMEOUT` (default: `5`)
+- `REDIS_SOCKET_CONNECT_TIMEOUT` (default: `5`)
 
 Celery (unused in current code paths):
-- `celery_broker_url` (default: `None`)
-- `celery_result_backend` (default: `None`)
+- `CELERY_BROKER_URL` (default: `None`)
+- `CELERY_RESULT_BACKEND` (default: `None`)
+
+**Note**: Environment variable names are case-insensitive; both `REDIS_URL` and `redis_url` will work, but uppercase is recommended for consistency.
 
 Privacy:
 - `PII_HASH_PEPPER` (default: empty string for development; **MANDATORY in production**)
@@ -381,14 +504,70 @@ Daily caps:
 
 ### Run in Development Mode
 
+**Option A: Integrated development server (recommended)**
+
 ```bash
 cd backend
-uvicorn main:app --reload
+bash scripts/start_dev.sh
+```
+
+This provides:
+- Auto-reload API server on port 8003
+- Background RQ worker with correct PYTHONPATH
+- Real-time heartbeat monitoring (queue stats, worker status)
+- Automatic cleanup on exit
+
+**Option B: API only**
+
+```bash
+cd backend
+uvicorn main:app --reload --host 0.0.0.0 --port 8003
+```
+
+### Development Tools
+
+#### LLM Provider Comparison
+
+Compare responses from OpenAI and Google Genai side-by-side:
+
+```bash
+cd backend
+export PYTHONPATH=/path/to/meeting-intel/backend
+python scripts/compare_llm_responses.py --task summary --prompt "Meeting about project timeline..."
+```
+
+Options:
+- `--task`: `summary`, `action_items`, or `generic`
+- `--prompt`: Text prompt to send to both providers
+- `--pretty`: Pretty-print JSON output
+
+Example output shows timing, token usage, and responses from both providers for direct comparison.
+
+#### Queue Management
+
+Requeue failed jobs matching specific error patterns:
+
+```bash
+cd backend
+export PYTHONPATH=/path/to/meeting-intel/backend
+python scripts/requeue_failed_import_jobs.py --error-substring "ImportError" --apply
+```
+
+Omit `--apply` for dry-run mode. Useful for recovering from deployment issues or dependency errors.
+
+#### Database Indexing
+
+Add optimized index for usage record queries:
+
+```bash
+cd backend
+export PYTHONPATH=/path/to/meeting-intel/backend
+python scripts/add_usage_meeting_created_index.py
 ```
 
 ### API Docs
 
-Swagger UI is available at `http://localhost:8000/docs`.
+Swagger UI is available at `http://localhost:8003/docs`.
 
 ### Tests
 

@@ -5,12 +5,22 @@ from models.user import User
 from core.exceptions import DatabaseError
 import uuid
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-def normalize_email(email: str) -> str:
-    """Normalize email by stripping whitespace and converting to lowercase."""
+def normalize_email(email: Optional[str]) -> str:
+    """Normalize email by stripping whitespace and converting to lowercase.
+    
+    Args:
+        email: Email address to normalize, or None
+        
+    Returns:
+        Normalized email string, or empty string if email is None
+    """
+    if email is None:
+        return ""
     return email.strip().lower()
 
 async def get_or_create_user_by_email(db: AsyncSession, email: str) -> User:

@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     OPENAI_MAX_RETRIES: int = 3
     OPENAI_RETRY_BASE_WAIT: int = 2  # seconds
 
-    GOOGLE_API_KEY: str
+    GOOGLE_API_KEY: Optional[str] = None
     GOOGLE_MODEL: str = "gemini-2.5-pro"
     GOOGLE_FALLBACK_MODEL: str = "gemini-2.5-flash"
 

@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
-PYTHON_BIN="${PYTHON_BIN:-/home/avishek/.pyenv/versions/meeting-intel/bin/python}"
-RQ_BIN="${RQ_BIN:-/home/avishek/.pyenv/versions/meeting-intel/bin/rq}"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python || echo python)}"
+RQ_BIN="${RQ_BIN:-$(command -v rq || echo rq)}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8003}"
 HEARTBEAT_SECONDS="${HEARTBEAT_SECONDS:-5}"

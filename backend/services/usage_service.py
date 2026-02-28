@@ -3,7 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select, func, and_
 from models.usage_record import UsageRecord
 from decimal import Decimal
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from core.privacy import hash_user_id, hash_meeting_id
 from core.config import settings
 from core.exceptions import ValidationError
@@ -50,7 +50,8 @@ def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) 
 
 
 def _get_today_range_utc() -> tuple[datetime, datetime]:
-    start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    """Get today's date range in UTC with timezone-aware datetimes."""
+    start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
     return start, end
 
