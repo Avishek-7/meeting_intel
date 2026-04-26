@@ -96,3 +96,7 @@ next-env.d.ts
 # Package lock files
 package-lock.json
 uv.lock
+
+# Graphify
+graphify-out/
+*.graphifyignore

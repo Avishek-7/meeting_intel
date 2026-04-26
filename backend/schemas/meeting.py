@@ -23,8 +23,8 @@ class ActionItem(BaseModel):
         return v.strip()
 
 class MeetingRequest(BaseModel):
-    title: Optional[str] = None
-    transcript: str = Field(..., description="The transcript of the meeting", min_length=10)
+    title: Optional[str] = Field(None, max_length=500)
+    transcript: str = Field(..., description="The transcript of the meeting", min_length=10, max_length=500_000)
 
 class MeetingSummaryBase(BaseModel):
     summary: str = Field(..., min_length=1, description="Meeting summary")

@@ -423,6 +423,16 @@ Both providers implement the same interface, ensuring seamless switching without
 - **Token and cost tracking**: Usage metadata captured for each LLM call
 - **Health check endpoint** at `/health` for monitoring and load balancer probes
 
+## Graphify Workflow Note
+
+If graphify extraction includes semantic nodes/edges without `source_file`, run the normalizer before build/report steps:
+
+```bash
+python scripts/normalize_graphify_extraction.py
+```
+
+This patch is idempotent and updates `graphify-out/.graphify_extract.json` in place so graphify build/report/viz commands run without schema warnings.
+
 ## Configuration and Environment Variables
 
 These are read from `.env` at the repo root by default.

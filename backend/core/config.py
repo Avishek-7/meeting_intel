@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     redis_socket_timeout: float = 5
     redis_socket_connect_timeout: float = 5
 
+    # CORS — comma-separated list of allowed frontend origins
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
+
     # Security/Privacy settings
     PII_HASH_PEPPER: str = ""  # Should be set in production via environment variable
 
@@ -79,6 +82,13 @@ class Settings(BaseSettings):
         env_file=str(Path(__file__).resolve().parent.parent.parent / ".env"),
         env_file_encoding="utf-8",
     )
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def validate_jwt_secret_key(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("JWT_SECRET_KEY must be at least 32 characters long.")
+        return v
 
     @field_validator("PII_HASH_PEPPER")
     @classmethod
