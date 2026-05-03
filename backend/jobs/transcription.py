@@ -40,17 +40,32 @@ async def _run_transcription_job(meeting_id: str, user_id: str) -> dict:
 
     # Now run analysis in a fresh session
     async with get_async_session() as db:
-        analysis = await process_meeting_transcript(
-            transcript=transcript, db=db, user_id=user_id
-        )
+        try:
+            analysis = await process_meeting_transcript(
+                transcript=transcript, db=db, user_id=user_id
+            )
+        except Exception:
+            result = await db.execute(
+                select(Meeting).where(Meeting.id == meeting_id, Meeting.user_id == user_id)
+            )
+            meeting = result.scalar_one_or_none()
+            if meeting is not None:
+                meeting.transcription_status = "analysis_failed"
+                await db.commit()
+            logger.exception("Meeting analysis failed after transcription", extra={"meeting_id": meeting_id})
+            raise
+
         # Refresh meeting record to apply summary + action_items
         result = await db.execute(
-            select(Meeting).where(Meeting.id == meeting_id)
+            select(Meeting).where(Meeting.id == meeting_id, Meeting.user_id == user_id)
         )
         meeting = result.scalar_one_or_none()
-        if meeting:
-            meeting.transcription_status = "done"
-            await db.commit()
+        if meeting is None:
+            logger.warning("Meeting disappeared before completion status update", extra={"meeting_id": meeting_id, "user_id": user_id})
+            raise ValueError(f"Meeting {meeting_id} not found for user {user_id}")
+
+        meeting.transcription_status = "done"
+        await db.commit()
 
     return {
         "meeting_id": meeting_id,

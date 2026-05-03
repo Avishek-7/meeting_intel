@@ -3,8 +3,8 @@ Billing API — Stripe checkout, portal, and webhook endpoints.
 """
 
 import logging
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, HttpUrl
 
@@ -27,12 +27,31 @@ router = APIRouter(prefix="/billing", tags=["Billing"])
 
 class CheckoutRequest(BaseModel):
     price_id: str
-    success_url: str
-    cancel_url: str
+    success_url: HttpUrl
+    cancel_url: HttpUrl
 
 
 class PortalRequest(BaseModel):
-    return_url: str
+    return_url: HttpUrl
+
+
+def _allowed_redirect_hosts() -> set[str]:
+    configured = getattr(settings, "BILLING_ALLOWED_REDIRECT_HOSTS", None)
+    if configured:
+        return {h.strip().lower() for h in configured.split(",") if h.strip()}
+    # Safe local defaults for development
+    return {"localhost", "127.0.0.1"}
+
+
+def _validate_redirect_url(url: str) -> str:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host not in _allowed_redirect_hosts():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Redirect URL host is not allowed",
+        )
+    return url
 
 
 @router.get("/plans")
@@ -48,17 +67,26 @@ async def start_checkout(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a Stripe Checkout session and return the redirect URL."""
-    user = await get_user_by_id(db, uuid.UUID(current_user["id"]))
+    try:
+        user_id = uuid.UUID(current_user["id"])
+    except (KeyError, ValueError, TypeError):
+        logger.warning("Invalid current_user id for checkout", extra={"current_user": current_user})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user identity")
+
+    user = await get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    success_url = _validate_redirect_url(str(body.success_url))
+    cancel_url = _validate_redirect_url(str(body.cancel_url))
 
     try:
         url = await create_checkout_session(
             db=db,
             user=user,
             price_id=body.price_id,
-            success_url=body.success_url,
-            cancel_url=body.cancel_url,
+            success_url=success_url,
+            cancel_url=cancel_url,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
@@ -76,12 +104,20 @@ async def customer_portal(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a Stripe Customer Portal session URL."""
-    user = await get_user_by_id(db, uuid.UUID(current_user["id"]))
+    try:
+        user_id = uuid.UUID(current_user["id"])
+    except (KeyError, ValueError, TypeError):
+        logger.warning("Invalid current_user id for portal", extra={"current_user": current_user})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user identity")
+
+    user = await get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    return_url = _validate_redirect_url(str(body.return_url))
+
     try:
-        url = await create_portal_session(db=db, user=user, return_url=body.return_url)
+        url = await create_portal_session(db=db, user=user, return_url=return_url)
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
     except Exception:

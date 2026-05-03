@@ -19,7 +19,8 @@ async def transcribe_audio_file(audio_path: str) -> str:
     Transcribe an audio file using OpenAI Whisper.
 
     Args:
-        audio_path: Local filesystem path (or s3:// URI after reading into bytes).
+        audio_path: Local filesystem path only. For S3/raw bytes use
+            transcribe_audio_bytes.
 
     Returns:
         Transcribed text string.

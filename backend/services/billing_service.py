@@ -2,6 +2,7 @@
 Billing service — Stripe checkout, customer management, webhook handling.
 """
 
+import asyncio
 import logging
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,11 +41,21 @@ async def get_or_create_stripe_customer(db: AsyncSession, user: User) -> str:
     if user.stripe_customer_id:
         return user.stripe_customer_id
 
-    s = _get_stripe()
-    customer = s.Customer.create(
-        email=user.email,
-        metadata={"user_id": str(user.id)},
-    )
+    try:
+        s = await asyncio.to_thread(_get_stripe)
+        customer = await asyncio.to_thread(
+            s.Customer.create,
+            email=user.email,
+            metadata={"user_id": str(user.id)},
+        )
+    except Exception as exc:
+        stripe_module = globals().get("stripe")
+        if stripe_module and isinstance(exc, stripe_module.error.StripeError):
+            logger.error("Stripe customer creation failed", exc_info=True)
+            raise RuntimeError("Failed to create Stripe customer") from exc
+        logger.error("Unexpected error creating Stripe customer", exc_info=True)
+        raise RuntimeError("Failed to create Stripe customer") from exc
+
     customer_id: str = customer["id"]
 
     user.stripe_customer_id = customer_id
@@ -66,25 +77,36 @@ async def create_checkout_session(
     cancel_url: str,
 ) -> str:
     """Create a Stripe Checkout Session and return its URL."""
-    s = _get_stripe()
+    s = await asyncio.to_thread(_get_stripe)
     customer_id = await get_or_create_stripe_customer(db, user)
 
-    session = s.checkout.Session.create(
-        customer=customer_id,
-        mode="subscription",
-        line_items=[{"price": price_id, "quantity": 1}],
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={"user_id": str(user.id)},
-    )
+    try:
+        session = await asyncio.to_thread(
+            s.checkout.Session.create,
+            customer=customer_id,
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"user_id": str(user.id)},
+        )
+    except Exception as exc:
+        stripe_module = globals().get("stripe")
+        if stripe_module and isinstance(exc, stripe_module.error.StripeError):
+            logger.error("Stripe checkout session creation failed", exc_info=True)
+            raise RuntimeError("Failed to create checkout session") from exc
+        logger.error("Unexpected checkout session creation error", exc_info=True)
+        raise RuntimeError("Failed to create checkout session") from exc
+
     return session["url"]
 
 
 async def create_portal_session(db: AsyncSession, user: User, return_url: str) -> str:
     """Create a Stripe Customer Portal session URL."""
-    s = _get_stripe()
+    s = await asyncio.to_thread(_get_stripe)
     customer_id = await get_or_create_stripe_customer(db, user)
-    session = s.billing_portal.Session.create(
+    session = await asyncio.to_thread(
+        s.billing_portal.Session.create,
         customer=customer_id,
         return_url=return_url,
     )
@@ -113,7 +135,7 @@ async def handle_webhook(payload: bytes, sig_header: str, webhook_secret: str) -
 async def _sync_subscription(subscription: dict) -> None:
     """Map Stripe subscription status to a local plan name."""
     from core.database import get_async_session
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     customer_id: str = subscription["customer"]
     status: str = subscription["status"]
@@ -140,20 +162,42 @@ async def _sync_subscription(subscription: dict) -> None:
         user = result.scalar_one_or_none()
         if user:
             user.plan = plan
-            user.plan_expires_at = datetime.utcfromtimestamp(current_period_end) if current_period_end else None
+            user.plan_expires_at = (
+                datetime.fromtimestamp(current_period_end, tz=timezone.utc)
+                if current_period_end
+                else None
+            )
             await db.commit()
             logger.info("Plan synced from Stripe", extra={"plan": plan})
+        else:
+            logger.warning(
+                "Stripe customer not found locally during sync",
+                extra={"customer_id": customer_id, "plan": plan, "subscription_id": subscription.get("id")},
+            )
 
 
 async def _handle_subscription_cancelled(subscription: dict) -> None:
     customer_id: str = subscription["customer"]
     from core.database import get_async_session
     async with get_async_session() as db:
-        result = await db.execute(
-            select(User).where(User.stripe_customer_id == customer_id)
-        )
-        user = result.scalar_one_or_none()
-        if user:
+        try:
+            result = await db.execute(
+                select(User).where(User.stripe_customer_id == customer_id)
+            )
+            user = result.scalar_one_or_none()
+            if user is None:
+                logger.warning(
+                    "Stripe customer not found locally during cancellation",
+                    extra={"customer_id": customer_id, "subscription_id": subscription.get("id")},
+                )
+                return
+
             user.plan = "free"
             user.plan_expires_at = None
             await db.commit()
+        except Exception:
+            logger.exception(
+                "Failed to handle subscription cancellation",
+                extra={"customer_id": customer_id, "subscription_id": subscription.get("id")},
+            )
+            raise

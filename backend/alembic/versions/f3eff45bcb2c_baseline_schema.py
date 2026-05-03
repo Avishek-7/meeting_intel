@@ -39,7 +39,7 @@ def upgrade() -> None:
         sa.Column('summary_text', sa.Text(), nullable=False),
         sa.Column('action_items', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id']),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('idx_meeting_user_created', 'meetings', ['user_id', 'created_at'], unique=False)

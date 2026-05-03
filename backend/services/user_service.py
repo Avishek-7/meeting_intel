@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy import select
 from models.user import User
-from core.exceptions import DatabaseError
+from core.exceptions import DatabaseError, ConflictError
 from core.security import hash_password, verify_password
 from core.users import fake_users_db
 import uuid
@@ -135,14 +135,17 @@ async def register_user(
     """
     Register a new user with email + password credentials.
 
-    Raises DatabaseError if the email is already taken.
+    Raises ConflictError if the email is already taken.
     """
     normalized_email = normalize_email(email)
     try:
-        existing_user = await get_user_by_email(db, normalized_email)
+        result = await db.execute(
+            select(User).where(User.email == normalized_email).with_for_update()
+        )
+        existing_user = result.scalar_one_or_none()
         if existing_user is not None:
             if existing_user.password_hash:
-                raise DatabaseError("A user with that email already exists")
+                raise ConflictError("A user with that email already exists")
 
             existing_user.password_hash = hash_password(password)
             if display_name and not existing_user.display_name:
@@ -167,7 +170,7 @@ async def register_user(
         return user
     except IntegrityError:
         await db.rollback()
-        raise DatabaseError("A user with that email already exists")
+        raise ConflictError("A user with that email already exists")
     except SQLAlchemyError as e:
         await db.rollback()
         logger.error("Database error during registration", exc_info=True)
@@ -200,17 +203,28 @@ async def authenticate_user(
         if local_identity is None:
             return None
 
+        locked_result = await db.execute(
+            select(User).where(User.id == user.id).with_for_update()
+        )
+        locked_user = locked_result.scalar_one_or_none()
+        if locked_user is None:
+            return None
+        if locked_user.password_hash:
+            if verify_password(password, locked_user.password_hash):
+                return locked_user
+            return None
+
         legacy_user = fake_users_db.get(local_identity)
         if not legacy_user or not verify_password(password, legacy_user["hashed_password"]):
             return None
 
-        user.password_hash = hash_password(password)
-        if getattr(user, "role", None) != legacy_user["role"]:
-            user.role = legacy_user["role"]
+        locked_user.password_hash = hash_password(password)
+        if hasattr(User, "role") and getattr(locked_user, "role", None) != legacy_user["role"]:
+            locked_user.role = legacy_user["role"]
         await db.commit()
-        await db.refresh(user)
+        await db.refresh(locked_user)
         logger.info("Migrated legacy passwordless user to password auth")
-        return user
+        return locked_user
 
     if not verify_password(password, user.password_hash):
         return None

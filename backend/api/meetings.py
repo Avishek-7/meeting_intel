@@ -43,6 +43,9 @@ from rq.job import Job
 from rq.exceptions import NoSuchJobError
 from redis.exceptions import RedisError
 from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
+from pathlib import Path
+import os
 import uuid
 import logging
 
@@ -515,7 +518,16 @@ async def upload_audio(
 
     Returns a job_id that can be polled via GET /meetings/jobs/{job_id}.
     """
-    user_id = current_user["id"]
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    # Validate queue availability before persisting any record
+    if default_queue is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Job queue unavailable — Redis is not configured.",
+        )
 
     # Persist the file
     try:
@@ -530,15 +542,23 @@ async def upload_audio(
         audio_file_path=audio_path,
         transcription_status="pending",
     )
-    db.add(meeting)
-    await db.commit()
-    await db.refresh(meeting)
-
-    # Enqueue transcription + analysis job
-    if default_queue is None:
+    try:
+        db.add(meeting)
+        await db.commit()
+        await db.refresh(meeting)
+    except (DatabaseError, SQLAlchemyError):
+        await db.rollback()
+        try:
+            local_root = Path(os.environ.get("STORAGE_LOCAL_DIR", "/tmp/meetingintel/audio")).resolve()
+            audio_file = Path(audio_path).resolve()
+            if audio_file.is_file() and local_root in audio_file.parents:
+                audio_file.unlink(missing_ok=True)
+        except Exception:
+            logger.exception("Failed to cleanup uploaded audio after DB failure")
+        logger.exception("Failed to persist meeting record for uploaded audio")
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Job queue unavailable — Redis is not configured.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist uploaded audio",
         )
 
     job = default_queue.enqueue(

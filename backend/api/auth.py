@@ -1,15 +1,18 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Response, Request
+import logging
+
+from fastapi import APIRouter, HTTPException, status, Depends, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.security import create_access_token
 from core.config import settings
 from core.database import get_db
 from core.dependencies import get_current_user
-from core.exceptions import DatabaseError
+from core.exceptions import ConflictError, DatabaseError
 from schemas.auth import RegisterRequest, TokenResponse, UserResponse
 from services.user_service import register_user, authenticate_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+logger = logging.getLogger(__name__)
 
 
 def _set_auth_cookie(response: Response, token: str) -> None:
@@ -39,8 +42,14 @@ async def register(
             password=body.password.get_secret_value(),
             display_name=body.display_name,
         )
-    except DatabaseError as exc:
+    except ConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except DatabaseError:
+        logger.exception("Database error during registration")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
     token = create_access_token({"sub": str(user.id)})
     _set_auth_cookie(response, token)
@@ -65,8 +74,12 @@ async def login(
     """Login with email + password (form field `username` carries the email)."""
     try:
         user = await authenticate_user(db, email=form_data.username, password=form_data.password)
-    except DatabaseError as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+    except DatabaseError:
+        logger.exception("Database error during login")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
     if user is None:
         raise HTTPException(

@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: Optional[str] = None
     STRIPE_PRO_PRICE_ID: Optional[str] = None
     STRIPE_ENTERPRISE_PRICE_ID: Optional[str] = None
+    BILLING_ALLOWED_REDIRECT_HOSTS: str = "localhost,127.0.0.1"
 
     # Sentry (optional)
     SENTRY_DSN: Optional[str] = None
@@ -105,7 +106,11 @@ class Settings(BaseSettings):
     def default_auth_cookie_secure(cls, v, info: ValidationInfo):
         if v is not None:
             return v
-        environment = (info.data.get("ENVIRONMENT") or "").lower()
+        environment = (
+            info.data.get("ENVIRONMENT")
+            if info.data.get("ENVIRONMENT") is not None
+            else getattr(cls, "ENVIRONMENT", "development")
+        ).lower()
         return environment not in {"development", "local", "test"}
 
     @field_validator("PII_HASH_PEPPER")

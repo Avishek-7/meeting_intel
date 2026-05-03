@@ -54,6 +54,10 @@ def downgrade() -> None:
     op.drop_column('users', 'is_active')
     op.drop_column('users', 'password_hash')
     op.drop_column('users', 'display_name')
+    op.execute("UPDATE meetings SET transcript_text = '' WHERE transcript_text IS NULL")
+    op.execute("UPDATE meetings SET transcript_hash = '' WHERE transcript_hash IS NULL")
+    op.execute("UPDATE meetings SET summary_text = '' WHERE summary_text IS NULL")
+    op.execute("UPDATE meetings SET action_items = '[]'::jsonb WHERE action_items IS NULL")
     op.alter_column('meetings', 'action_items',
                existing_type=postgresql.JSONB(astext_type=sa.Text()),
                nullable=False)
