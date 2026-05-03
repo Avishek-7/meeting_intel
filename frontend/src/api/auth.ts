@@ -8,6 +8,22 @@ export interface User {
   plan: string;
 }
 
+export interface SafeUser {
+  id: string;
+  display_name?: string;
+  role: string;
+  plan: string;
+}
+
+export function toSafeUser(user: User): SafeUser {
+  return {
+    id: user.id,
+    display_name: user.display_name,
+    role: user.role,
+    plan: user.plan,
+  };
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;

@@ -13,8 +13,13 @@ export default function DashboardPage() {
   });
 
   async function handleSignOut() {
-    await signOut();
-    navigate("/login");
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Sign out failed", error);
+    } finally {
+      navigate("/login");
+    }
   }
 
   return (
@@ -45,7 +50,11 @@ export default function DashboardPage() {
                 <h3>{m.title ?? "Untitled meeting"}</h3>
                 <p className="meta">{new Date(m.created_at).toLocaleString()}</p>
                 {m.summary_preview && (
-                  <p className="preview">{m.summary_preview.slice(0, 140)}…</p>
+                  <p className="preview">
+                    {m.summary_preview.length > 140
+                      ? `${m.summary_preview.slice(0, 140)}…`
+                      : m.summary_preview}
+                  </p>
                 )}
               </Link>
             </li>

@@ -41,7 +41,7 @@ export default function MeetingDetailPage() {
         <p className="summary-text">{data.summary_text}</p>
       </section>
 
-      {data.action_items.length > 0 && (
+      {Array.isArray(data.action_items) && data.action_items.length > 0 && (
         <section>
           <h3>Action items ({data.action_items.length})</h3>
           <ul className="action-items">

@@ -62,9 +62,7 @@ export async function analyzeMeeting(
 export async function uploadAudio(file: File): Promise<JobEnqueueResponse> {
   const form = new FormData();
   form.append("audio", file);
-  const { data } = await api.post<JobEnqueueResponse>("/meetings/upload-audio", form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const { data } = await api.post<JobEnqueueResponse>("/meetings/upload-audio", form);
   return data;
 }
 

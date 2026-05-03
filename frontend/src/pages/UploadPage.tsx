@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { isAxiosError } from "axios";
 import { useNavigate } from "react-router-dom";
 import { analyzeMeeting, uploadAudio, getJobStatus } from "../api/meetings";
@@ -16,6 +16,15 @@ export default function UploadPage() {
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, []);
 
   function startPolling(jobId: string) {
     pollRef.current = setInterval(async () => {
@@ -118,7 +127,7 @@ export default function UploadPage() {
 
         {mode === "audio" && (
           <label>
-            Audio file <span className="hint">(mp3, mp4, wav, ogg, flac — max 200 MB)</span>
+            Audio file <span className="hint">(audio/*, video/mp4, video/webm — max 200 MB)</span>
             <input
               ref={fileRef}
               type="file"

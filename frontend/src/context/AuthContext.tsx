@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import type { ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 import { getMe, logout as apiLogout } from "../api/auth";
 import type { User } from "../api/auth";
 
@@ -18,9 +19,16 @@ const AuthContext = createContext<AuthContextValue>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const shouldCheckSession = !["/login", "/register"].includes(window.location.pathname);
+  const location = useLocation();
+  const pathname = location.pathname;
+  const shouldCheckSession = !(
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname === "/register" ||
+    pathname.startsWith("/register/")
+  );
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(shouldCheckSession);
+  const [loading, setLoading] = useState<boolean>(shouldCheckSession);
 
   useEffect(() => {
     if (!shouldCheckSession) {
@@ -31,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(setUser)
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
-  }, [shouldCheckSession]);
+  }, [pathname, shouldCheckSession]);
 
   async function signOut() {
     await apiLogout().catch(() => {});
