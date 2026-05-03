@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.meeting import (
     MeetingRequest,
@@ -35,11 +35,15 @@ from core.rbac import log_admin_action
 from core.database import get_db
 from core.transcript import estimate_token_count
 from core.config import settings
-from core.queue import redis_client as queue_redis_client
+from core.queue import redis_client as queue_redis_client, default_queue
+from core.storage import save_audio_upload
+from models.meeting import Meeting
+from jobs.transcription import run_transcription_job_sync
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
 from redis.exceptions import RedisError
 from datetime import datetime
+import uuid
 import logging
 
 logger = logging.getLogger(__name__)
@@ -491,3 +495,57 @@ async def get_meeting(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
         )
+
+
+# ── Audio upload ───────────────────────────────────────────────────────────────
+
+@router.post(
+    "/upload-audio",
+    response_model=MeetingJobEnqueueResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_audio(
+    audio: UploadFile = File(..., description="Audio/video file to transcribe (max 200 MB)"),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Upload an audio file. The file is stored, and a background job is enqueued
+    to transcribe it (via OpenAI Whisper) and then run meeting analysis.
+
+    Returns a job_id that can be polled via GET /meetings/jobs/{job_id}.
+    """
+    user_id = current_user["id"]
+
+    # Persist the file
+    try:
+        audio_path = await save_audio_upload(audio, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    # Create a stub Meeting record
+    meeting = Meeting(
+        id=uuid.uuid4(),
+        user_id=uuid.UUID(user_id),
+        audio_file_path=audio_path,
+        transcription_status="pending",
+    )
+    db.add(meeting)
+    await db.commit()
+    await db.refresh(meeting)
+
+    # Enqueue transcription + analysis job
+    if default_queue is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Job queue unavailable — Redis is not configured.",
+        )
+
+    job = default_queue.enqueue(
+        run_transcription_job_sync,
+        str(meeting.id),
+        user_id,
+        job_timeout=600,  # 10 min max for large files
+    )
+
+    return MeetingJobEnqueueResponse(job_id=job.id, status="queued")

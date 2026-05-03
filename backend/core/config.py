@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Auth cookie settings
     AUTH_COOKIE_NAME: str = "access_token"
-    AUTH_COOKIE_SECURE: bool = True  # Set to False only for local HTTP development
+    AUTH_COOKIE_SECURE: Optional[bool] = None
     AUTH_COOKIE_SAMESITE: str = "lax"
     AUTH_COOKIE_DOMAIN: Optional[str] = None
     AUTH_COOKIE_PATH: str = "/"
@@ -72,10 +72,20 @@ class Settings(BaseSettings):
     redis_socket_connect_timeout: float = 5
 
     # CORS — comma-separated list of allowed frontend origins
-    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
+    # Include common local frontend dev ports by default.
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
     # Security/Privacy settings
     PII_HASH_PEPPER: str = ""  # Should be set in production via environment variable
+
+    # Stripe billing (optional — billing endpoints 503 if not set)
+    STRIPE_SECRET_KEY: Optional[str] = None
+    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+    STRIPE_PRO_PRICE_ID: Optional[str] = None
+    STRIPE_ENTERPRISE_PRICE_ID: Optional[str] = None
+
+    # Sentry (optional)
+    SENTRY_DSN: Optional[str] = None
 
     # Load env from project root when running inside backend/
     model_config = SettingsConfigDict(
@@ -89,6 +99,14 @@ class Settings(BaseSettings):
         if len(v) < 32:
             raise ValueError("JWT_SECRET_KEY must be at least 32 characters long.")
         return v
+
+    @field_validator("AUTH_COOKIE_SECURE", mode="before")
+    @classmethod
+    def default_auth_cookie_secure(cls, v, info: ValidationInfo):
+        if v is not None:
+            return v
+        environment = (info.data.get("ENVIRONMENT") or "").lower()
+        return environment not in {"development", "local", "test"}
 
     @field_validator("PII_HASH_PEPPER")
     @classmethod

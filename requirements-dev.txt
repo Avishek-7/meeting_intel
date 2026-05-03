@@ -9,6 +9,7 @@
 pytest==9.0.2
 pytest-asyncio==0.23.5
 pytest-cov==4.1.0
+httpx>=0.23.0,<0.29.0  # pin for starlette TestClient compatibility
 
 # Code Quality Tools
 black==24.2.0

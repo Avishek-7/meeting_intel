@@ -12,11 +12,16 @@ class Meeting(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     
-    transcript_text = Column(Text, nullable=False)
-    transcript_hash = Column(String(64), unique=True, nullable=False, index=True)
+    title = Column(String(500), nullable=True)
+    transcript_text = Column(Text, nullable=True)
+    transcript_hash = Column(String(64), unique=True, nullable=True, index=True)
     
-    summary_text = Column(Text, nullable=False)
-    action_items = Column(JSONB, nullable=False)
+    # Audio upload support
+    audio_file_path = Column(String(1024), nullable=True)
+    transcription_status = Column(String(50), nullable=True)  # pending, processing, done, failed
+
+    summary_text = Column(Text, nullable=True)
+    action_items = Column(JSONB, nullable=True)
     
     created_at = Column(DateTime, server_default=func.now(), index=True)
     

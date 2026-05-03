@@ -10,6 +10,7 @@ uvicorn[standard]==0.29.0
 python-dotenv==1.0.1
 pydantic==2.6.4
 pydantic-settings==2.2.1
+email-validator>=2.1.0  # for pydantic EmailStr
 
 # ===============================
 # AI / LLM Stack
@@ -38,14 +39,31 @@ loguru==0.7.2
 cachetools==5.3.3
 
 # ===============================
-# Optional / Nice to Have
+# Queue / Cache
 # ===============================
 redis==5.0.3
 rq==2.6.1
 
+# ===============================
+# Auth / Security
+# ===============================
 python-jose
 passlib==1.7.4
 bcrypt==3.2.2
+
+# ===============================
+# Database drivers (sync — Alembic)
+# ===============================
 psycopg2==2.9.11
 greenlet==3.3.1
+
+# ===============================
+# Billing
+# ===============================
+stripe>=8.0.0,<10.0.0  # optional — billing endpoints return 503 without STRIPE_SECRET_KEY
+
+# ===============================
+# Observability
+# ===============================
+sentry-sdk[fastapi]>=1.40.0  # optional — only active when SENTRY_DSN is set
 

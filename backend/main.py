@@ -6,10 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from api.meetings import router as meetings_router
 from api.debug import router as debug_router
+from api.auth import router as auth_router
+from api.billing import router as billing_router
 from core.middleware.middleware import log_request_middleware as log_request
 from core.middleware.request_context import request_context_middleware
 from core.middleware.rate_limit import rate_limit_middleware
-from api.auth import router as auth_router
 from core.logging import configure_logging
 from core.database import get_db
 from core.cache import get_redis_client
@@ -20,6 +21,24 @@ import logging
 configure_logging()
 
 logger = logging.getLogger(__name__)
+
+# ── Sentry ─────────────────────────────────────────────────────────────────────
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            environment=settings.ENVIRONMENT,
+            traces_sample_rate=0.1,
+            integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+            send_default_pii=False,
+        )
+        logger.info("Sentry initialised")
+    except ImportError:
+        logger.warning("sentry-sdk not installed — skipping Sentry init. Run: pip install sentry-sdk")
 
 
 @asynccontextmanager
@@ -44,6 +63,7 @@ app.add_middleware(
 app.include_router(meetings_router)
 app.include_router(debug_router)
 app.include_router(auth_router)
+app.include_router(billing_router)
 app.middleware("http")(rate_limit_middleware)
 app.middleware("http")(log_request)
 app.middleware("http")(request_context_middleware)

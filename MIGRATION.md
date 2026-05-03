@@ -1,77 +1,75 @@
-# Migration Summary: Meeting History & Analytics
+# Alembic Migration Discipline
 
-## What Changed
+This project now uses Alembic as the source of truth for schema evolution.
 
-### 1. Models Updated
-**Files Modified:**
-- `backend/models/user.py` - Added relationships: `meetings`, `usage_records`
-- `backend/models/meeting.py` - Added relationships: `user`, `usage_records`; Added index: `idx_meeting_user_created(user_id, created_at)`
-- `backend/models/usage_record.py` - Added relationships: `user`, `meeting`; Added indices: `idx_usage_user_created(user_id, created_at)`, `idx_usage_created(created_at)`
+## Baseline
 
-### 2. Schemas Added
-**File:** `backend/schemas/meeting.py`
-- `MeetingMetadata` - Meeting with preview & metadata only
-- `MeetingDetail` - Full meeting data with usage info
-- `UserStats` - User's aggregated cost/token/meeting stats
-- `DailyStats` - Per-day breakdown
-- `GlobalStats` - System-wide stats
-- `PaginatedMeetings` - Paginated meeting list wrapper
+- Baseline revision: `f3eff45bcb2c` (`backend/alembic/versions/f3eff45bcb2c_baseline_schema.py`)
+- This revision creates the full current schema (`users`, `meetings`, `usage_records`) for fresh databases.
 
-### 3. New Service Layer
-**File Created:** `backend/services/analytics_service.py`
-- `get_user_stats()` - Aggregated user stats with date range
-- `get_user_daily_stats()` - Daily breakdown for user
-- `get_global_stats()` - System-wide aggregates
-- `get_global_daily_stats()` - Global daily breakdown
-- `get_user_top_expensive_meetings()` - Top 10 expensive meetings
-- `parse_date_range()` - Date range parsing (presets: today/7d/30d/all + custom)
+## Daily Workflow
 
-**File Extended:** `backend/services/meeting_service.py`
-- `get_user_meetings()` - Paginated meeting list (metadata only)
-- `get_meeting_detail()` - Full meeting data with auth check
+1. Create a migration after model changes:
 
-### 4. API Endpoints Added
-**File:** `backend/api/meetings.py`
-
-**User-Scoped (Authenticated):**
-- `GET /meetings` - List user's meetings (paginated, metadata only)
-- `GET /meetings/{meeting_id}` - Get full meeting details
-- `GET /analytics/user` - User stats (date range support)
-- `GET /analytics/user/daily` - User daily breakdown
-
-**Admin-Scoped (TODO: Add admin role check):**
-- `GET /analytics/global` - Global stats
-- `GET /analytics/global/daily` - Global daily breakdown
-
-## How to Apply
-
-### Option 1: Automatic (Recommended)
-Run the migration helper:
 ```bash
 cd backend
-python -m scripts.apply_migrations
+alembic revision --autogenerate -m "describe_change"
 ```
 
-### Option 2: Manual
-Execute the following SQL statements or use your ORM's migration tool:
+2. Review the generated file and adjust if needed.
 
-## Deduplication Status
-✅ Already Implemented
-- DB level: `transcript_hash` unique constraint
-- Service level: Check before insert, handle race conditions
-- Both are enforced in `process_meeting_transcript()`
+3. Apply locally:
 
-## Testing Checklist
-- [ ] Access `/meetings` → returns paginated list
-- [ ] Access `/meetings/{meeting_id}` → returns full detail or 404 if not owner
-- [ ] Access `/analytics/user?preset=today` → returns user stats
-- [ ] Access `/analytics/user/daily?preset=7d` → returns daily breakdown
-- [ ] Access `/analytics/global` → returns global stats (implement admin check)
-- [ ] Same transcript twice → only one meeting persisted
-- [ ] Different users, same transcript → separate meetings (both have metadata)
+```bash
+cd backend
+alembic upgrade head
+```
 
-## Next Steps
-1. Add admin role check to global analytics endpoints (see TODO in api/meetings.py)
-2. Run migration script to apply indices
-3. Test endpoints with sample data
-4. Monitor query performance with new indices
+4. Validate migration state:
+
+```bash
+cd backend
+alembic current
+alembic heads
+```
+
+## Existing Database Adoption
+
+If a database already has tables created outside Alembic and should be considered up to date, stamp it once:
+
+```bash
+cd backend
+alembic stamp head
+```
+
+Do not use `stamp` for brand-new databases.
+
+## Team Rules (Discipline)
+
+1. Never change schema in production manually.
+2. Every model schema change must include a migration in the same PR.
+3. Keep a single migration head (`alembic heads` should return one head).
+4. Prefer additive migrations for backward compatibility.
+5. Never edit old committed revisions except for critical fixes agreed by the team.
+
+## CI Baseline Checks
+
+CI should run migrations on a clean database to ensure bootstrap works:
+
+```bash
+cd backend
+alembic upgrade head
+alembic current
+```
+
+Optional strict check:
+
+```bash
+cd backend
+test "$(alembic heads | wc -l | tr -d ' ')" = "1"
+```
+
+## Notes
+
+- Alembic reads `DATABASE_URL` from app settings via `backend/alembic/env.py`.
+- Async URLs are converted to sync driver URLs for migration execution.

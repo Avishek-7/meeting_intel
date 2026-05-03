@@ -68,6 +68,13 @@ jobs:
           cd backend
           python -m mypy . --ignore-missing-imports --no-error-summary || true
 
+      - name: Alembic migration checks
+        run: |
+          cd backend
+          alembic upgrade head
+          alembic current
+          test "$(alembic heads | wc -l | tr -d ' ')" = "1"
+
       - name: Run tests
         run: |
           cd backend
