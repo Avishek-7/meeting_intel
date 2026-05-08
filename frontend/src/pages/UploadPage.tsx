@@ -86,6 +86,11 @@ export default function UploadPage() {
   return (
     <Layout title="New Meeting" subtitle="Upload audio or paste transcript" showSidebar>
       <div className="page-container">
+        <div className="mi-section-head">
+          <h2>Create analysis job</h2>
+          <span className="mi-count-pill">Async processing</span>
+        </div>
+
         <div className="tab-bar">
           <button
             className={mode === "transcript" ? "tab active" : "tab"}
@@ -101,55 +106,57 @@ export default function UploadPage() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="upload-form">
-          <label>
-            Meeting title (optional)
-            <input
-              type="text"
-              value={title}
-              maxLength={500}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </label>
-
-          {mode === "transcript" && (
+        <div className="mi-content-panel">
+          <form onSubmit={handleSubmit} className="upload-form">
             <label>
-              Transcript
-              <textarea
-                rows={12}
-                value={transcript}
-                onChange={(e) => setTranscript(e.target.value)}
-                placeholder="Paste your meeting transcript here…"
-                required
-              />
-            </label>
-          )}
-
-          {mode === "audio" && (
-            <label>
-              Audio file <span className="hint">(audio/*, video/mp4, video/webm — max 200 MB)</span>
+              Meeting title (optional)
               <input
-                ref={fileRef}
-                type="file"
-                accept="audio/*,video/mp4,video/webm"
-                onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)}
-                required
+                type="text"
+                value={title}
+                maxLength={500}
+                onChange={(e) => setTitle(e.target.value)}
               />
             </label>
-          )}
 
-          {error && <p className="error">{error}</p>}
+            {mode === "transcript" && (
+              <label>
+                Transcript
+                <textarea
+                  rows={12}
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  placeholder="Paste your meeting transcript here…"
+                  required
+                />
+              </label>
+            )}
 
-          {jobState === "idle" || jobState === "failed" ? (
-            <button type="submit">Analyze</button>
-          ) : (
-            <p className="status-message">
-              {jobState === "queued" && "Queued…"}
-              {jobState === "processing" && "Processing… this may take a minute."}
-              {jobState === "done" && "Done! Redirecting…"}
-            </p>
-          )}
-        </form>
+            {mode === "audio" && (
+              <label>
+                Audio file <span className="hint">(audio/*, video/mp4, video/webm — max 200 MB)</span>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="audio/*,video/mp4,video/webm"
+                  onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)}
+                  required
+                />
+              </label>
+            )}
+
+            {error && <p className="error">{error}</p>}
+
+            {jobState === "idle" || jobState === "failed" ? (
+              <button type="submit">Analyze</button>
+            ) : (
+              <p className="status-message">
+                {jobState === "queued" && "Queued…"}
+                {jobState === "processing" && "Processing… this may take a minute."}
+                {jobState === "done" && "Done! Redirecting…"}
+              </p>
+            )}
+          </form>
+        </div>
       </div>
     </Layout>
   );

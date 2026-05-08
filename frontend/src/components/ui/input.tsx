@@ -53,11 +53,11 @@ const AnimatedInput: React.FC<AnimatedInputProps> = ({
   }, [value]);
 
   const {
-    text = 'text-white',
-    border = 'border-white',
-    focusText = 'text-blue-400',
-    focusBorder = 'border-blue-400',
-    background = 'bg-transparent'
+    text = 'text-slate-700',
+    border = 'border-slate-300',
+    focusText = 'text-teal-700',
+    focusBorder = 'border-teal-600',
+    background = 'bg-white/80'
   } = colors;
 
   const sizeClasses = {

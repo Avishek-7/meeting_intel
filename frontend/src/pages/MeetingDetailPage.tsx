@@ -38,8 +38,10 @@ export default function MeetingDetailPage() {
   return (
     <Layout title={data.title ?? "Untitled meeting"} subtitle="Meeting insights and action items" showSidebar>
       <div className="page-container">
-        <Link to="/" className="back-link">← Dashboard</Link>
-        <p className="meta">{new Date(data.created_at).toLocaleString()}</p>
+        <div className="mi-section-head mi-section-head-tight">
+          <Link to="/" className="back-link">← Dashboard</Link>
+          <span className="mi-count-pill">{new Date(data.created_at).toLocaleString()}</span>
+        </div>
 
         {data.transcription_status && data.transcription_status !== "done" && (
           <div className="status-banner">
@@ -47,13 +49,13 @@ export default function MeetingDetailPage() {
           </div>
         )}
 
-        <section>
+        <section className="mi-content-panel">
           <h3>Summary</h3>
           <p className="summary-text">{data.summary_text}</p>
         </section>
 
         {Array.isArray(data.action_items) && data.action_items.length > 0 && (
-          <section>
+          <section className="mi-content-panel">
             <h3>Action items ({data.action_items.length})</h3>
             <ul className="action-items">
               {data.action_items.map((item, i) => (
@@ -73,7 +75,7 @@ export default function MeetingDetailPage() {
         )}
 
         {data.transcript_text && (
-          <details className="transcript-section">
+          <details className="transcript-section mi-content-panel">
             <summary>View full transcript</summary>
             <pre className="transcript-text">{data.transcript_text}</pre>
           </details>
