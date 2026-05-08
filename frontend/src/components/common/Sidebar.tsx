@@ -24,7 +24,12 @@ export default function Sidebar() {
                             : location.pathname === item.href || location.pathname.startsWith(`${item.href}/`);
 
                     return (
-                        <Link key={item.name} to={item.href} className={isActive ? "mi-sidebar-link active" : "mi-sidebar-link"}>
+                        <Link
+                            key={item.name}
+                            to={item.href}
+                            aria-current={isActive ? "page" : undefined}
+                            className={isActive ? "mi-sidebar-link active" : "mi-sidebar-link"}
+                        >
                             {item.name}
                         </Link>
                     );

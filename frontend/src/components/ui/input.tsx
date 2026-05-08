@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 
 interface AnimatedInputProps {
   label: string;
@@ -10,6 +10,7 @@ interface AnimatedInputProps {
   onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
   required?: boolean;
   disabled?: boolean;
+  id?: string;
   className?: string;
   colors?: {
     text?: string;
@@ -33,6 +34,7 @@ const AnimatedInput: React.FC<AnimatedInputProps> = ({
   onFocus,
   required = false,
   disabled = false,
+  id,
   className = '',
   colors = {},
   size = 'md',
@@ -42,6 +44,13 @@ const AnimatedInput: React.FC<AnimatedInputProps> = ({
   const [isFocused, setIsFocused] = useState(false);
   const [hasValue, setHasValue] = useState(!!value);
   const inputRef = useRef<HTMLInputElement>(null);
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHasValue(!!value);
+  }, [value]);
 
   const {
     text = 'text-white',
@@ -119,6 +128,7 @@ const AnimatedInput: React.FC<AnimatedInputProps> = ({
     <div className={`relative ${className}`}>
       <div className="relative mb-10">
         <input
+          id={inputId}
           ref={inputRef}
           type={type}
           value={value}
@@ -126,6 +136,7 @@ const AnimatedInput: React.FC<AnimatedInputProps> = ({
           onFocus={handleFocus}
           onBlur={handleBlur}
           required={required}
+          aria-required={required}
           disabled={disabled}
           placeholder={placeholder}
           className={`
@@ -146,7 +157,7 @@ const AnimatedInput: React.FC<AnimatedInputProps> = ({
           `}
         />
         
-        <label className={`absolute top-4 left-0 pointer-events-none ${size === 'sm' ? 'top-2' : size === 'lg' ? 'top-5' : 'top-4'}`}>
+        <label htmlFor={inputId} className={`absolute top-4 left-0 pointer-events-none ${size === 'sm' ? 'top-2' : size === 'lg' ? 'top-5' : 'top-4'}`}>
           {renderAnimatedLabel()}
         </label>
       </div>

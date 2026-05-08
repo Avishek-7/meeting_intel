@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { createElement, type ReactNode } from "react";
 
 type ReusableCardProps = {
   title: string;
   description: string;
   image?: string;
+  headingLevel?: 1 | 2 | 3 | 4 | 5 | 6;
   buttonText?: string;
   onButtonClick?: () => void;
   footer?: ReactNode;
@@ -13,15 +14,21 @@ export default function ReusableCard({
   title,
   description,
   image,
+  headingLevel = 3,
   buttonText = "Learn More",
   onButtonClick,
   footer,
 }: ReusableCardProps) {
+  const headingTag = `h${headingLevel}` as const;
+  const hasImage = typeof image === "string" && image.trim() !== "";
+
   return (
     <article className="mi-card">
-      {image ? <img src={image} alt={title} className="mi-card-image" /> : null}
+      {hasImage ? (
+        <img src={image} alt={title || "Card image"} width={1200} height={675} className="mi-card-image" />
+      ) : null}
       <div className="mi-card-content">
-        <h3>{title}</h3>
+        {createElement(headingTag, null, title)}
         <p>{description}</p>
         {onButtonClick ? (
           <button onClick={onButtonClick} className="btn-primary">

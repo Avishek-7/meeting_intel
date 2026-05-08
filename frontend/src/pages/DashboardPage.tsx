@@ -51,7 +51,14 @@ export default function DashboardPage() {
               <li key={m.id} className="meeting-card">
                 <Link to={`/meetings/${m.id}`}>
                   <h3>{m.title ?? "Untitled meeting"}</h3>
-                  <p className="meta">{new Date(m.created_at).toLocaleString()}</p>
+                  <p className="meta">
+                    {(() => {
+                      const createdAtDate = new Date(m.created_at);
+                      return Number.isNaN(createdAtDate.getTime())
+                        ? "Unknown date"
+                        : createdAtDate.toLocaleString();
+                    })()}
+                  </p>
                   {m.summary_preview && (
                     <p className="preview">
                       {m.summary_preview.length > 140

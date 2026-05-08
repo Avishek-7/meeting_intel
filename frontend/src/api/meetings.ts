@@ -35,7 +35,9 @@ export interface PaginatedMeetings {
 interface BackendPaginatedMeetings {
   items: Array<{
     id: string;
+    title?: string;
     created_at: string;
+    transcript_length?: number;
     summary_preview?: string;
     action_count?: number;
   }>;
@@ -106,8 +108,10 @@ export async function getMeetings(page = 1, pageSize = 20): Promise<PaginatedMee
   return {
     items: (data.items || []).map((item) => ({
       id: item.id,
+      title: item.title,
       created_at: item.created_at,
-      summary_preview: item.summary_preview ?? "",
+      transcript_length: item.transcript_length,
+      summary_preview: item.summary_preview,
     })),
     total: data.total,
     page,

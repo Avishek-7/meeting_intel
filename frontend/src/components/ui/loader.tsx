@@ -13,6 +13,25 @@ interface LoaderProps {
   barCount?: number;
 }
 
+const COLOR_MAP: Record<string, string> = {
+  'blue-500': '#3b82f6',
+  'purple-500': '#a855f7',
+  'cyan-500': '#06b6d4',
+  'gray-900': '#111827',
+  'indigo-500': '#6366f1',
+  'emerald-500': '#10b981',
+  'rose-500': '#f43f5e',
+  'yellow-500': '#eab308',
+  'slate-800': '#1e293b',
+};
+
+function resolveColor(value: string) {
+  if (COLOR_MAP[value]) {
+    return COLOR_MAP[value];
+  }
+  return value;
+}
+
 const Loader: React.FC<LoaderProps> = ({
   size = 'md',
   colors = {},
@@ -27,6 +46,11 @@ const Loader: React.FC<LoaderProps> = ({
     background = 'gray-900'
   } = colors;
 
+  const resolvedPrimary = resolveColor(primary);
+  const resolvedSecondary = resolveColor(secondary);
+  const resolvedAccent = resolveColor(accent);
+  const resolvedBackground = resolveColor(background);
+
   const sizeClasses = {
     sm: 'w-16 h-16',
     md: 'w-32 h-32',
@@ -37,7 +61,7 @@ const Loader: React.FC<LoaderProps> = ({
   const barHeightClasses = {
     sm: 'h-6',
     md: 'h-12',
-    lg: 'h-18',
+    lg: 'h-20',
     xl: 'h-24'
   };
 
@@ -50,7 +74,7 @@ const Loader: React.FC<LoaderProps> = ({
 
   const generateBars = () => {
     const bars = [];
-    const colors = [accent, primary, 'indigo-500', secondary];
+    const colors = [resolvedAccent, resolvedPrimary, resolveColor('indigo-500'), resolvedSecondary];
     
     for (let i = 0; i < barCount; i++) {
       const color = colors[i % colors.length];
@@ -59,8 +83,8 @@ const Loader: React.FC<LoaderProps> = ({
       bars.push(
         <div
           key={i}
-          className={`w-1.5 ${barHeightClasses[size]} bg-${color} rounded-full animate-[bounce_1s_ease-in-out_infinite_${delay}s]`}
-          style={{ animationDelay: `${delay}s` }}
+          className={`w-1.5 ${barHeightClasses[size]} rounded-full animate-bounce [animation-duration:1s]`}
+          style={{ animationDelay: `${delay}s`, backgroundColor: color }}
         />
       );
     }
@@ -71,32 +95,52 @@ const Loader: React.FC<LoaderProps> = ({
   return (
     <div className={`${sizeClasses[size]} relative flex items-center justify-center ${className}`}>
       {/* Outer glow */}
-      <div className={`absolute inset-0 rounded-xl bg-${primary}/20 blur-xl animate-pulse`} />
+      <div className="absolute inset-0 rounded-xl blur-xl animate-pulse" style={{ backgroundColor: `${resolvedPrimary}33` }} />
       
       {/* Main container */}
       <div className="w-full h-full relative flex items-center justify-center">
         {/* Spinning gradient border */}
-        <div className={`absolute inset-0 rounded-xl bg-gradient-to-r from-${accent} via-${primary} to-${secondary} animate-spin blur-sm`} />
+        <div
+          className="absolute inset-0 rounded-xl animate-spin blur-sm"
+          style={{
+            backgroundImage: `linear-gradient(90deg, ${resolvedAccent}, ${resolvedPrimary}, ${resolvedSecondary})`,
+          }}
+        />
         
         {/* Inner content area */}
-        <div className={`absolute inset-1 bg-${background} rounded-lg flex items-center justify-center overflow-hidden`}>
+        <div className="absolute inset-1 rounded-lg flex items-center justify-center overflow-hidden" style={{ backgroundColor: resolvedBackground }}>
           {/* Animated bars */}
           <div className="flex gap-1 items-center">
             {generateBars()}
           </div>
           
           {/* Overlay gradient */}
-          <div className={`absolute inset-0 bg-gradient-to-t from-transparent via-${primary}/10 to-transparent animate-pulse`} />
+          <div
+            className="absolute inset-0 animate-pulse"
+            style={{ backgroundImage: `linear-gradient(to top, transparent, ${resolvedPrimary}1a, transparent)` }}
+          />
         </div>
       </div>
       
       {/* Corner dots */}
       {showCornerDots && (
         <>
-          <div className={`absolute -top-1 -left-1 ${dotSizeClasses[size]} bg-${primary} rounded-full animate-ping`} />
-          <div className={`absolute -top-1 -right-1 ${dotSizeClasses[size]} bg-${secondary} rounded-full animate-ping`} style={{ animationDelay: '0.1s' }} />
-          <div className={`absolute -bottom-1 -left-1 ${dotSizeClasses[size]} bg-${accent} rounded-full animate-ping`} style={{ animationDelay: '0.2s' }} />
-          <div className={`absolute -bottom-1 -right-1 ${dotSizeClasses[size]} bg-${primary} rounded-full animate-ping`} style={{ animationDelay: '0.3s' }} />
+          <div
+            className={`absolute -top-1 -left-1 ${dotSizeClasses[size]} rounded-full animate-ping`}
+            style={{ backgroundColor: resolvedPrimary }}
+          />
+          <div
+            className={`absolute -top-1 -right-1 ${dotSizeClasses[size]} rounded-full animate-ping`}
+            style={{ backgroundColor: resolvedSecondary, animationDelay: '0.1s' }}
+          />
+          <div
+            className={`absolute -bottom-1 -left-1 ${dotSizeClasses[size]} rounded-full animate-ping`}
+            style={{ backgroundColor: resolvedAccent, animationDelay: '0.2s' }}
+          />
+          <div
+            className={`absolute -bottom-1 -right-1 ${dotSizeClasses[size]} rounded-full animate-ping`}
+            style={{ backgroundColor: resolvedPrimary, animationDelay: '0.3s' }}
+          />
         </>
       )}
     </div>
@@ -191,3 +235,4 @@ const LoaderDemo: React.FC = () => {
 };
 
 export default LoaderDemo;
+export { Loader };
