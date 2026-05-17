@@ -100,3 +100,7 @@ uv.lock
 # Graphify
 graphify-out/
 *.graphifyignore
+
+
+terraform.tfvars
+
