@@ -33,14 +33,14 @@ from core.dependencies import get_current_user
 from core.security import verify_access_token
 from core.authorization import get_admin_user
 from core.rbac import log_admin_action
-from core.database import get_db
+from core.database import get_db, get_async_session
 from core.transcript import estimate_token_count
 from core.config import settings
 from core.queue import redis_client as queue_redis_client, default_queue
 from core.storage import save_audio_upload
 from models.meeting import Meeting
 from jobs.transcription import run_transcription_job_sync
-from services.ai.transcription import transcribe_audio_bytes, WHISPER_MODEL
+from services.ai.transcription import transcribe_audio_bytes, infer_audio_extension, WHISPER_MODEL
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
 from redis.exceptions import RedisError
@@ -55,6 +55,12 @@ import json
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
+
+
+async def _enforce_live_transcription_budget(user_id: uuid.UUID, transcript_text: str = "") -> None:
+    estimated_tokens = estimate_token_count(transcript_text) if transcript_text else 0
+    async with get_async_session() as db:
+        await enforce_daily_usage_limits(db, user_id, estimated_tokens=estimated_tokens)
 
 
 @router.websocket("/transcribe/live")
@@ -72,10 +78,27 @@ async def live_transcribe(websocket: WebSocket):
       - {"event":"error", "detail":...}
     """
     token = websocket.query_params.get("token") or websocket.cookies.get(settings.AUTH_COOKIE_NAME)
-    payload = verify_access_token(token) if token else None
+    try:
+        payload = verify_access_token(token) if token else None
+    except Exception:
+        payload = None
 
     if payload is None or not payload.get("sub"):
         await websocket.close(code=1008, reason="Unauthorized")
+        return
+
+    email = payload.get("email") or f"{payload['sub']}@meetingintel.local"
+    async with get_async_session() as db:
+        user = await get_or_create_user_by_email(db, email)
+
+    try:
+        await _enforce_live_transcription_budget(user.id)
+    except ValidationError as exc:
+        await websocket.close(code=1008, reason=str(exc))
+        return
+    except DatabaseError:
+        logger.exception("Live transcription budget check failed during connect")
+        await websocket.close(code=1011, reason="Unable to start live transcription")
         return
 
     await websocket.accept()
@@ -111,7 +134,11 @@ async def live_transcribe(websocket: WebSocket):
 
                 chunk_index += 1
                 try:
-                    text = await transcribe_audio_bytes(audio_chunk, filename=f"live_chunk_{chunk_index}.webm")
+                    extension = infer_audio_extension(audio_chunk)
+                    text = await transcribe_audio_bytes(
+                        audio_chunk,
+                        filename=f"live_chunk_{chunk_index}.{extension}",
+                    )
                 except Exception:
                     logger.exception("Live transcription failed for chunk", extra={"chunk_index": chunk_index})
                     await websocket.send_json({
@@ -124,12 +151,34 @@ async def live_transcribe(websocket: WebSocket):
                 clean_text = (text or "").strip()
                 if clean_text:
                     transcript_parts.append(clean_text)
+                    full_text = " ".join(transcript_parts)
+                    try:
+                        await _enforce_live_transcription_budget(user.id, transcript_text=full_text)
+                    except ValidationError as exc:
+                        await websocket.send_json({
+                            "event": "error",
+                            "detail": str(exc),
+                            "chunk_index": chunk_index,
+                        })
+                        await websocket.close(code=1008, reason=str(exc))
+                        break
+                    except DatabaseError:
+                        logger.exception("Live transcription budget check failed after chunk", extra={"chunk_index": chunk_index})
+                        await websocket.send_json({
+                            "event": "error",
+                            "detail": "Unable to continue live transcription.",
+                            "chunk_index": chunk_index,
+                        })
+                        await websocket.close(code=1011)
+                        break
+                else:
+                    full_text = " ".join(transcript_parts)
 
                 await websocket.send_json({
                     "event": "partial",
                     "chunk_index": chunk_index,
                     "text": clean_text,
-                    "full_text": " ".join(transcript_parts),
+                    "full_text": full_text,
                 })
                 continue
 

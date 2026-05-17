@@ -285,6 +285,9 @@ rq worker default
 
 Endpoint: `ws://localhost:8003/meetings/transcribe/live`
 
+Production: use secure WebSockets over TLS, for example `wss://your-domain.com/meetings/transcribe/live`.
+Ensure TLS termination is configured at your proxy or load balancer on port 443 (or your equivalent HTTPS listener) so the WebSocket connection remains encrypted in production.
+
 Authentication:
 - Cookie auth works automatically in browser clients.
 - Or pass JWT as query param: `?token=<access_token>`.
