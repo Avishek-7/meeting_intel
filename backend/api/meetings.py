@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
+from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.meeting import (
     MeetingRequest,
@@ -30,6 +30,7 @@ from services.usage_service import enforce_daily_usage_limits
 from services.user_service import get_or_create_user_by_email
 from core.exceptions import ValidationError, AIServiceError, DatabaseError, NotFoundError
 from core.dependencies import get_current_user
+from core.security import verify_access_token
 from core.authorization import get_admin_user
 from core.rbac import log_admin_action
 from core.database import get_db
@@ -39,6 +40,7 @@ from core.queue import redis_client as queue_redis_client, default_queue
 from core.storage import save_audio_upload
 from models.meeting import Meeting
 from jobs.transcription import run_transcription_job_sync
+from services.ai.transcription import transcribe_audio_bytes, WHISPER_MODEL
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
 from redis.exceptions import RedisError
@@ -48,10 +50,126 @@ from pathlib import Path
 import os
 import uuid
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
+
+
+@router.websocket("/transcribe/live")
+async def live_transcribe(websocket: WebSocket):
+    """
+    Live transcription over WebSocket using OpenAI Whisper.
+
+    Protocol:
+    - Client sends binary audio chunks (e.g., webm/ogg/mp4 chunks).
+    - Optional client text message: {"event": "finalize"}
+    - Server sends events:
+      - {"event":"ready", ...}
+      - {"event":"partial", "text":..., "chunk_index":..., "full_text":...}
+      - {"event":"final", "text":...}
+      - {"event":"error", "detail":...}
+    """
+    token = websocket.query_params.get("token") or websocket.cookies.get(settings.AUTH_COOKIE_NAME)
+    payload = verify_access_token(token) if token else None
+
+    if payload is None or not payload.get("sub"):
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+
+    await websocket.accept()
+    await websocket.send_json({
+        "event": "ready",
+        "model": WHISPER_MODEL,
+        "max_chunk_bytes": settings.LIVE_TRANSCRIBE_MAX_CHUNK_BYTES,
+    })
+
+    transcript_parts: list[str] = []
+    chunk_index = 0
+
+    try:
+        while True:
+            message = await websocket.receive()
+            msg_type = message.get("type")
+
+            if msg_type == "websocket.disconnect":
+                break
+
+            if message.get("bytes") is not None:
+                audio_chunk: bytes = message["bytes"]
+                if not audio_chunk:
+                    continue
+
+                if len(audio_chunk) > settings.LIVE_TRANSCRIBE_MAX_CHUNK_BYTES:
+                    await websocket.send_json({
+                        "event": "error",
+                        "detail": "Audio chunk too large.",
+                        "max_chunk_bytes": settings.LIVE_TRANSCRIBE_MAX_CHUNK_BYTES,
+                    })
+                    continue
+
+                chunk_index += 1
+                try:
+                    text = await transcribe_audio_bytes(audio_chunk, filename=f"live_chunk_{chunk_index}.webm")
+                except Exception:
+                    logger.exception("Live transcription failed for chunk", extra={"chunk_index": chunk_index})
+                    await websocket.send_json({
+                        "event": "error",
+                        "detail": "Transcription failed for a chunk.",
+                        "chunk_index": chunk_index,
+                    })
+                    continue
+
+                clean_text = (text or "").strip()
+                if clean_text:
+                    transcript_parts.append(clean_text)
+
+                await websocket.send_json({
+                    "event": "partial",
+                    "chunk_index": chunk_index,
+                    "text": clean_text,
+                    "full_text": " ".join(transcript_parts),
+                })
+                continue
+
+            text_payload = message.get("text")
+            if text_payload is None:
+                continue
+
+            event = ""
+            try:
+                parsed = json.loads(text_payload)
+                event = str(parsed.get("event", "")).lower()
+            except json.JSONDecodeError:
+                event = text_payload.strip().lower()
+
+            if event in {"finalize", "stop", "done"}:
+                await websocket.send_json({
+                    "event": "final",
+                    "text": " ".join(transcript_parts),
+                    "chunks": chunk_index,
+                })
+                break
+
+            if event == "ping":
+                await websocket.send_json({"event": "pong"})
+                continue
+
+            await websocket.send_json({
+                "event": "error",
+                "detail": "Unsupported event. Use binary audio chunks or event=finalize.",
+            })
+
+    except WebSocketDisconnect:
+        logger.info("Live transcription websocket disconnected")
+    except Exception:
+        logger.exception("Unexpected error in live transcription websocket")
+        try:
+            await websocket.send_json({"event": "error", "detail": "Live transcription session failed."})
+        except Exception:
+            pass
+        await websocket.close(code=1011)
 
 @router.post(
     "/analyze",
@@ -152,6 +270,12 @@ async def enqueue_meeting_analysis(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Meeting analysis queue is currently unavailable.",
+        )
+    except DatabaseError:
+        logger.exception("Database error while enqueueing meeting analysis.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to prepare meeting analysis request.",
         )
     except Exception:
         logger.exception("Unexpected error while enqueueing meeting analysis.")

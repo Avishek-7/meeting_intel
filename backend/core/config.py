@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     
     OPENAI_MAX_RETRIES: int = 3
     OPENAI_RETRY_BASE_WAIT: int = 2  # seconds
+    LIVE_TRANSCRIBE_MAX_CHUNK_BYTES: int = 5 * 1024 * 1024
 
     GOOGLE_API_KEY: Optional[str] = None
     GOOGLE_MODEL: str = "gemini-2.5-pro"

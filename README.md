@@ -279,6 +279,25 @@ rq worker default
 - `GET /meetings/jobs/{job_id}` (async job status and result)
 - `GET /meetings/history` (paginated history)
 - `GET /meetings/{meeting_id}` (meeting detail)
+- `WS /meetings/transcribe/live` (live chunked audio transcription via OpenAI Whisper)
+
+#### Live Transcription WebSocket
+
+Endpoint: `ws://localhost:8003/meetings/transcribe/live`
+
+Authentication:
+- Cookie auth works automatically in browser clients.
+- Or pass JWT as query param: `?token=<access_token>`.
+
+Protocol:
+- Send binary audio chunks (webm/ogg/mp4 chunks from MediaRecorder are recommended).
+- Optional control message to finish: `{"event":"finalize"}`.
+
+Server events:
+- `{"event":"ready", "model":"whisper-1", "max_chunk_bytes":...}`
+- `{"event":"partial", "chunk_index":N, "text":"...", "full_text":"..."}`
+- `{"event":"final", "text":"...", "chunks":N}`
+- `{"event":"error", "detail":"..."}`
 
 ### Analytics
 - `GET /meetings/analytics/user` (user aggregate stats)

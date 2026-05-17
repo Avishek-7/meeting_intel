@@ -74,6 +74,25 @@ export interface JobStatusResponse {
   error?: string;
 }
 
+export interface LiveTranscriptionEvent {
+  event: "ready" | "partial" | "final" | "error" | "pong";
+  text?: string;
+  full_text?: string;
+  detail?: string;
+  chunk_index?: number;
+  max_chunk_bytes?: number;
+}
+
+export function createLiveTranscriptionWebSocket(token?: string): WebSocket {
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const wsBase = apiUrl.replace(/^http/i, "ws").replace(/\/+$/, "");
+  const url = new URL(`${wsBase}/meetings/transcribe/live`);
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+  return new WebSocket(url.toString());
+}
+
 export async function analyzeMeeting(
   transcript: string,
   title?: string

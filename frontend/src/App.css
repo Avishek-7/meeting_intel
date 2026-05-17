@@ -53,8 +53,10 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
 .mi-section-head h2 {
-  font-size: 1.28rem;
-  color: #133b5c;
+  font-size: 1.32rem;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #0d2f4a;
 }
 
 .mi-section-head-tight {
@@ -88,6 +90,12 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .meeting-card:hover { box-shadow: 0 16px 28px rgba(14, 64, 86, 0.14); transform: translateY(-2px); }
 .meeting-card a { text-decoration: none; color: inherit; }
 .meeting-card h3 { font-size: 1.04rem; margin-bottom: 0.33rem; }
+.meeting-card h3 {
+  font-size: 1.08rem;
+  line-height: 1.28;
+  font-weight: 700;
+  color: #0d2f4a;
+}
 .mi-card-topline {
   display: flex;
   align-items: center;
@@ -121,6 +129,23 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .upload-form input, .upload-form textarea { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 0.95rem; font-family: inherit; outline: none; resize: vertical; }
 .upload-form input:focus, .upload-form textarea:focus { border-color: var(--color-primary); }
 .status-message { font-size: 0.95rem; color: var(--color-muted); }
+.live-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.live-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.live-controls textarea {
+  min-height: 160px;
+}
+
 .back-link { color: var(--color-primary); text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 1rem; }
 .summary-text { line-height: 1.7; white-space: pre-wrap; }
 .mi-content-panel {
@@ -134,7 +159,10 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 section { margin-top: 1.5rem; }
 section h3 {
-  font-size: 1rem;
+  font-size: 1.06rem;
+  line-height: 1.26;
+  font-weight: 700;
+  color: #0f3552;
   margin-bottom: 0.75rem;
   border-bottom: 1px solid rgba(15, 110, 140, 0.18);
   padding-bottom: 0.45rem;
@@ -234,8 +262,10 @@ section h3 {
 
 .mi-header-left h1 {
   font-size: 1.5rem;
+  line-height: 1.1;
+  font-weight: 800;
   letter-spacing: -0.02em;
-  color: #0b2c44;
+  color: #082338;
 }
 
 .mi-header-left p {
