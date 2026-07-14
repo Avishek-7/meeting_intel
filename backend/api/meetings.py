@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.meeting import (
     MeetingRequest,
@@ -26,20 +26,199 @@ from services.analytics_service import (
     get_global_daily_stats,
     parse_date_range,
 )
+from services.usage_service import enforce_daily_usage_limits
 from services.user_service import get_or_create_user_by_email
 from core.exceptions import ValidationError, AIServiceError, DatabaseError, NotFoundError
 from core.dependencies import get_current_user
+from core.security import verify_access_token
 from core.authorization import get_admin_user
-from core.database import get_db
-from core.queue import redis_client as queue_redis_client
+from core.rbac import log_admin_action
+from core.database import get_db, get_async_session
+from core.transcript import estimate_token_count
+from core.config import settings
+from core.queue import redis_client as queue_redis_client, default_queue
+from core.storage import save_audio_upload
+from models.meeting import Meeting
+from jobs.transcription import run_transcription_job_sync
+from services.ai.transcription import transcribe_audio_bytes, infer_audio_extension, WHISPER_MODEL
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
 from redis.exceptions import RedisError
+from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
+from pathlib import Path
+import os
+import uuid
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
+
+
+async def _enforce_live_transcription_budget(user_id: uuid.UUID, transcript_text: str = "") -> None:
+    estimated_tokens = estimate_token_count(transcript_text) if transcript_text else 0
+    async with get_async_session() as db:
+        await enforce_daily_usage_limits(db, user_id, estimated_tokens=estimated_tokens)
+
+
+@router.websocket("/transcribe/live")
+async def live_transcribe(websocket: WebSocket):
+    """
+    Live transcription over WebSocket using OpenAI Whisper.
+
+    Protocol:
+    - Client sends binary audio chunks (e.g., webm/ogg/mp4 chunks).
+    - Optional client text message: {"event": "finalize"}
+    - Server sends events:
+      - {"event":"ready", ...}
+      - {"event":"partial", "text":..., "chunk_index":..., "full_text":...}
+      - {"event":"final", "text":...}
+      - {"event":"error", "detail":...}
+    """
+    token = websocket.query_params.get("token") or websocket.cookies.get(settings.AUTH_COOKIE_NAME)
+    try:
+        payload = verify_access_token(token) if token else None
+    except Exception:
+        payload = None
+
+    if payload is None or not payload.get("sub"):
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+
+    email = payload.get("email") or f"{payload['sub']}@meetingintel.local"
+    async with get_async_session() as db:
+        user = await get_or_create_user_by_email(db, email)
+
+    try:
+        await _enforce_live_transcription_budget(user.id)
+    except ValidationError as exc:
+        await websocket.close(code=1008, reason=str(exc))
+        return
+    except DatabaseError:
+        logger.exception("Live transcription budget check failed during connect")
+        await websocket.close(code=1011, reason="Unable to start live transcription")
+        return
+
+    await websocket.accept()
+    await websocket.send_json({
+        "event": "ready",
+        "model": WHISPER_MODEL,
+        "max_chunk_bytes": settings.LIVE_TRANSCRIBE_MAX_CHUNK_BYTES,
+    })
+
+    transcript_parts: list[str] = []
+    chunk_index = 0
+
+    try:
+        while True:
+            message = await websocket.receive()
+            msg_type = message.get("type")
+
+            if msg_type == "websocket.disconnect":
+                break
+
+            if message.get("bytes") is not None:
+                audio_chunk: bytes = message["bytes"]
+                if not audio_chunk:
+                    continue
+
+                if len(audio_chunk) > settings.LIVE_TRANSCRIBE_MAX_CHUNK_BYTES:
+                    await websocket.send_json({
+                        "event": "error",
+                        "detail": "Audio chunk too large.",
+                        "max_chunk_bytes": settings.LIVE_TRANSCRIBE_MAX_CHUNK_BYTES,
+                    })
+                    continue
+
+                chunk_index += 1
+                try:
+                    extension = infer_audio_extension(audio_chunk)
+                    text = await transcribe_audio_bytes(
+                        audio_chunk,
+                        filename=f"live_chunk_{chunk_index}.{extension}",
+                    )
+                except Exception:
+                    logger.exception("Live transcription failed for chunk", extra={"chunk_index": chunk_index})
+                    await websocket.send_json({
+                        "event": "error",
+                        "detail": "Transcription failed for a chunk.",
+                        "chunk_index": chunk_index,
+                    })
+                    continue
+
+                clean_text = (text or "").strip()
+                if clean_text:
+                    transcript_parts.append(clean_text)
+                    full_text = " ".join(transcript_parts)
+                    try:
+                        await _enforce_live_transcription_budget(user.id, transcript_text=full_text)
+                    except ValidationError as exc:
+                        await websocket.send_json({
+                            "event": "error",
+                            "detail": str(exc),
+                            "chunk_index": chunk_index,
+                        })
+                        await websocket.close(code=1008, reason=str(exc))
+                        break
+                    except DatabaseError:
+                        logger.exception("Live transcription budget check failed after chunk", extra={"chunk_index": chunk_index})
+                        await websocket.send_json({
+                            "event": "error",
+                            "detail": "Unable to continue live transcription.",
+                            "chunk_index": chunk_index,
+                        })
+                        await websocket.close(code=1011)
+                        break
+                else:
+                    full_text = " ".join(transcript_parts)
+
+                await websocket.send_json({
+                    "event": "partial",
+                    "chunk_index": chunk_index,
+                    "text": clean_text,
+                    "full_text": full_text,
+                })
+                continue
+
+            text_payload = message.get("text")
+            if text_payload is None:
+                continue
+
+            event = ""
+            try:
+                parsed = json.loads(text_payload)
+                event = str(parsed.get("event", "")).lower()
+            except json.JSONDecodeError:
+                event = text_payload.strip().lower()
+
+            if event in {"finalize", "stop", "done"}:
+                await websocket.send_json({
+                    "event": "final",
+                    "text": " ".join(transcript_parts),
+                    "chunks": chunk_index,
+                })
+                break
+
+            if event == "ping":
+                await websocket.send_json({"event": "pong"})
+                continue
+
+            await websocket.send_json({
+                "event": "error",
+                "detail": "Unsupported event. Use binary audio chunks or event=finalize.",
+            })
+
+    except WebSocketDisconnect:
+        logger.info("Live transcription websocket disconnected")
+    except Exception:
+        logger.exception("Unexpected error in live transcription websocket")
+        try:
+            await websocket.send_json({"event": "error", "detail": "Live transcription session failed."})
+        except Exception:
+            pass
+        await websocket.close(code=1011)
 
 @router.post(
     "/analyze",
@@ -65,6 +244,11 @@ async def process_meeting(
         # In future, JWT token should contain email or user UUID
         email = current_user.get("email") or f"{username}@meetingintel.local"
         user = await get_or_create_user_by_email(db, email)
+        
+        estimated_tokens = estimate_token_count(request.transcript)
+        if estimated_tokens > settings.MAX_TRANSCRIPT_TOKENS:
+            raise ValidationError("Transcript exceeds the maximum token limit.")
+        await enforce_daily_usage_limits(db, user.id, estimated_tokens=estimated_tokens)
         
         return await process_meeting_transcript(request.transcript, db, str(user.id))
     
@@ -118,6 +302,11 @@ async def enqueue_meeting_analysis(
     try:
         email = current_user.get("email") or f"{username}@meetingintel.local"
         user = await get_or_create_user_by_email(db, email)
+
+        estimated_tokens = estimate_token_count(request.transcript)
+        if estimated_tokens > settings.MAX_TRANSCRIPT_TOKENS:
+            raise ValidationError("Transcript exceeds the maximum token limit.")
+        await enforce_daily_usage_limits(db, user.id, estimated_tokens=estimated_tokens)
         job_id = enqueue_meeting_analysis_job(request.transcript, str(user.id))
         return MeetingJobEnqueueResponse(job_id=job_id)
     except ValidationError as e:
@@ -130,6 +319,12 @@ async def enqueue_meeting_analysis(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Meeting analysis queue is currently unavailable.",
+        )
+    except DatabaseError:
+        logger.exception("Database error while enqueueing meeting analysis.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to prepare meeting analysis request.",
         )
     except Exception:
         logger.exception("Unexpected error while enqueueing meeting analysis.")
@@ -476,3 +671,74 @@ async def get_meeting(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
         )
+
+
+# ── Audio upload ───────────────────────────────────────────────────────────────
+
+@router.post(
+    "/upload-audio",
+    response_model=MeetingJobEnqueueResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_audio(
+    audio: UploadFile = File(..., description="Audio/video file to transcribe (max 200 MB)"),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Upload an audio file. The file is stored, and a background job is enqueued
+    to transcribe it (via OpenAI Whisper) and then run meeting analysis.
+
+    Returns a job_id that can be polled via GET /meetings/jobs/{job_id}.
+    """
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    # Validate queue availability before persisting any record
+    if default_queue is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Job queue unavailable — Redis is not configured.",
+        )
+
+    # Persist the file
+    try:
+        audio_path = await save_audio_upload(audio, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    # Create a stub Meeting record
+    meeting = Meeting(
+        id=uuid.uuid4(),
+        user_id=uuid.UUID(user_id),
+        audio_file_path=audio_path,
+        transcription_status="pending",
+    )
+    try:
+        db.add(meeting)
+        await db.commit()
+        await db.refresh(meeting)
+    except (DatabaseError, SQLAlchemyError):
+        await db.rollback()
+        try:
+            local_root = Path(os.environ.get("STORAGE_LOCAL_DIR", "/tmp/meetingintel/audio")).resolve()
+            audio_file = Path(audio_path).resolve()
+            if audio_file.is_file() and local_root in audio_file.parents:
+                audio_file.unlink(missing_ok=True)
+        except Exception:
+            logger.exception("Failed to cleanup uploaded audio after DB failure")
+        logger.exception("Failed to persist meeting record for uploaded audio")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist uploaded audio",
+        )
+
+    job = default_queue.enqueue(
+        run_transcription_job_sync,
+        str(meeting.id),
+        user_id,
+        job_timeout=600,  # 10 min max for large files
+    )
+
+    return MeetingJobEnqueueResponse(job_id=job.id, status="queued")

@@ -1,0 +1,152 @@
+import { api } from "./client";
+
+export interface ActionItem {
+  task: string;
+  owner: string;
+  due_date: string;
+  priority: "high" | "medium" | "low";
+}
+
+export interface MeetingMetadata {
+  id: string;
+  title?: string;
+  created_at: string;
+  transcript_length?: number;
+  summary_preview?: string;
+}
+
+export interface MeetingDetail {
+  id: string;
+  title?: string;
+  transcript_text?: string;
+  summary_text: string;
+  action_items: ActionItem[];
+  created_at: string;
+  transcription_status?: string;
+}
+
+export interface PaginatedMeetings {
+  items: MeetingMetadata[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+interface BackendPaginatedMeetings {
+  items: Array<{
+    id: string;
+    title?: string;
+    created_at: string;
+    transcript_length?: number;
+    summary_preview?: string;
+    action_count?: number;
+  }>;
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+interface BackendMeetingDetail {
+  id: string;
+  created_at: string;
+  summary?: string;
+  summary_text?: string;
+  action_items?: ActionItem[];
+  transcription_status?: string;
+  title?: string;
+  transcript_text?: string;
+}
+
+export interface JobEnqueueResponse {
+  job_id: string;
+  status: string;
+}
+
+export interface JobStatusResponse {
+  job_id: string;
+  status: string;
+  result?: {
+    meeting_id?: string;
+    summary: string;
+    action_items: ActionItem[];
+  };
+  error?: string;
+}
+
+export interface LiveTranscriptionEvent {
+  event: "ready" | "partial" | "final" | "error" | "pong";
+  text?: string;
+  full_text?: string;
+  detail?: string;
+  chunk_index?: number;
+  max_chunk_bytes?: number;
+}
+
+export function createLiveTranscriptionWebSocket(token?: string): WebSocket {
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const wsBase = apiUrl.replace(/^http/i, "ws").replace(/\/+$/, "");
+  const url = new URL(`${wsBase}/meetings/transcribe/live`);
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+  return new WebSocket(url.toString());
+}
+
+export async function analyzeMeeting(
+  transcript: string,
+  title?: string
+): Promise<JobEnqueueResponse> {
+  const { data } = await api.post<JobEnqueueResponse>("/meetings/analyze-async", {
+    transcript,
+    title,
+  });
+  return data;
+}
+
+export async function uploadAudio(file: File): Promise<JobEnqueueResponse> {
+  const form = new FormData();
+  form.append("audio", file);
+  const { data } = await api.post<JobEnqueueResponse>("/meetings/upload-audio", form);
+  return data;
+}
+
+export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
+  const { data } = await api.get<JobStatusResponse>(`/meetings/jobs/${jobId}`);
+  return data;
+}
+
+export async function getMeetings(page = 1, pageSize = 20): Promise<PaginatedMeetings> {
+  const limit = pageSize;
+  const offset = Math.max(0, (page - 1) * pageSize);
+
+  const { data } = await api.get<BackendPaginatedMeetings>("/meetings/history", {
+    params: { limit, offset },
+  });
+
+  return {
+    items: (data.items || []).map((item) => ({
+      id: item.id,
+      title: item.title,
+      created_at: item.created_at,
+      transcript_length: item.transcript_length,
+      summary_preview: item.summary_preview,
+    })),
+    total: data.total,
+    page,
+    page_size: pageSize,
+  };
+}
+
+export async function getMeetingDetail(id: string): Promise<MeetingDetail> {
+  const { data } = await api.get<BackendMeetingDetail>(`/meetings/${id}`);
+  return {
+    id: data.id,
+    title: data.title,
+    transcript_text: data.transcript_text,
+    summary_text: data.summary_text ?? data.summary ?? "",
+    action_items: Array.isArray(data.action_items) ? data.action_items : [],
+    created_at: data.created_at,
+    transcription_status: data.transcription_status,
+  };
+}

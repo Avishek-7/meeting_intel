@@ -277,6 +277,12 @@ async def get_user_top_expensive_meetings(
         List of dicts: [{meeting_id, cost, tokens, created_at}, ...]
     """
     try:
+        # Validate and clamp limit
+        if limit <= 0:
+            limit = 10
+        elif limit > 100:
+            limit = 100
+            
         user_uuid = uuid.UUID(user_id)
         result = await db.execute(
             select(
@@ -322,14 +328,22 @@ def parse_date_range(from_param: str = None, to_param: str = None, preset: str =
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
     
+    # Check if partial date range provided (only one param)
+    if (from_param and not to_param) or (to_param and not from_param):
+        missing = "to_param" if from_param else "from_param"
+        provided = "from_param" if from_param else "to_param"
+        logger.warning("partial_date_range", provided=provided, missing=missing)
+        raise ValueError(f"Partial date range provided: {provided} given but {missing} missing")
+    
     # If custom range provided, use it
     if from_param and to_param:
         try:
             date_from = datetime.fromisoformat(from_param)
             date_to = datetime.fromisoformat(to_param)
             return date_from, date_to
-        except ValueError:
-            logger.warning("invalid_date_format", from_param=from_param, to_param=to_param)
+        except ValueError as e:
+            logger.warning("invalid_date_format", from_param=from_param, to_param=to_param, error=str(e))
+            raise ValueError(f"Invalid date format: {str(e)}") from e
     
     # Use preset
     if preset == "today":

@@ -56,6 +56,16 @@ def run_meeting_analysis_job_sync(transcript: str, user_id: str):
                 )
         return await retry_async(_attempt)
     logger.info("meeting_analysis_job_sync_started")
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    
+    if loop is not None:
+        raise RuntimeError(
+            "run_meeting_analysis_job_sync cannot be called from an async context. "
+            "Use run_meeting_analysis_job directly instead."
+        )
     result = asyncio.run(_run())
     logger.info("meeting_analysis_job_sync_completed")
     return result

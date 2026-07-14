@@ -1,4 +1,5 @@
 import logging
+import uuid
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,8 +7,7 @@ from core.database import get_db
 from core.exceptions import DatabaseError
 from core.security import verify_access_token
 from core.config import settings
-from core.users import fake_users_db
-from services.user_service import get_user_by_email
+from services.user_service import get_user_by_id
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
@@ -32,33 +32,33 @@ async def get_current_user(
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
+            detail="Invalid or expired token",
         )
-    username: str = payload.get("sub")
-    user = fake_users_db.get(username)
 
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
-    user_context = dict(user)
-    user_context["username"] = username
-    if not user_context.get("email"):
-        user_context["email"] = f"{username}@meetingintel.local"
+    user_id_str: str | None = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token")
 
     try:
-        db_user = await get_user_by_email(db, user_context["email"])
+        user_id = uuid.UUID(user_id_str)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed token")
+
+    try:
+        user = await get_user_by_id(db, user_id)
     except DatabaseError:
         logger.warning("Database lookup failed for current user.")
-        db_user = None
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service temporarily unavailable")
 
-    if db_user is not None:
-        if db_user.email:
-            user_context["email"] = db_user.email
-        if getattr(db_user, "role", None):
-            user_context["role"] = db_user.role
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
 
-    return user_context
-
+    return {
+        "id": str(user.id),
+        "email": user.email or "",
+        "display_name": user.display_name,
+        "role": user.role,
+        "plan": user.plan,
+        "username": user.email or str(user.id),
+    }
 

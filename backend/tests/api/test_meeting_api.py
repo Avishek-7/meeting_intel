@@ -14,8 +14,9 @@ client = TestClient(app)
 
 @pytest.mark.skip(reason="Integration test requires database connection")
 def test_analyze_meeting_endpoint(monkeypatch):
-    # Create a valid auth token for an existing user
-    token = create_access_token({"sub": "avishek"})
+    import uuid
+    # JWT sub is now a user UUID string
+    token = create_access_token({"sub": str(uuid.uuid4())})
     headers = {"Authorization": f"Bearer {token}"}
     
     # Mock the analyze_meeting function in the pipeline module

@@ -15,13 +15,17 @@ from core.config import settings
 
 _logger = logging.getLogger(__name__)
 
-_HASH_PEPPER = settings.PII_HASH_PEPPER or ""
+_HASH_PEPPER = settings.PII_HASH_PEPPER
 
 if not _HASH_PEPPER:
+    if settings.ENVIRONMENT == "production":
+        raise RuntimeError(
+            "PII_HASH_PEPPER must be set in production to prevent enumeration attacks."
+        )
     _logger.warning(
-        "PII_HASH_PEPPER is not set. Hashed identifiers are vulnerable to enumeration attacks. "
-        "Set this environment variable in production."
+        "PII_HASH_PEPPER is not set. Hashed identifiers are vulnerable to enumeration attacks."
     )
+    _HASH_PEPPER = ""  # Fallback to empty string in non-production
 
 
 def hash_user_id(user_id: Union[str, uuid.UUID]) -> str:
@@ -47,6 +51,8 @@ def hash_user_id(user_id: Union[str, uuid.UUID]) -> str:
         >>> hash_user_id("123e4567-e89b-12d3-a456-426614174000")
         'a1b2c3d4e5f6'
     """
+    if user_id is None:
+        raise ValueError("user_id cannot be None")
     user_id_str = str(user_id)
     return hashlib.sha256((_HASH_PEPPER + user_id_str).encode()).hexdigest()[:12]
 

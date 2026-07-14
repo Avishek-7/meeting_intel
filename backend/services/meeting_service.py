@@ -11,20 +11,21 @@ from models.usage_record import UsageRecord
 from core.cache import get_redis_client
 from core.cache_keys import meeting_cache_key
 from core.cache_invalidation import invalidate_meeting_cache
-from services.usage_service import track_ai_usage
+from services.usage_service import track_ai_usage, enforce_daily_usage_limits
 from core.queue import default_queue
 from core.privacy import hash_user_id, hash_meeting_id
 from core.log_utils import log_error, log_info, log_warning
 import json
 import structlog
 import time
-from core.transcript import generate_transcript_hash
+from core.transcript import generate_transcript_hash, estimate_token_count
+from core.config import settings
 import uuid
 
 logger = structlog.get_logger("services.meeting_service")
 redis_client = get_redis_client()
 
-CACHE_TTL_SECONDS = 60 * 10 # 10 minutes
+CACHE_TTL_SECONDS = settings.MEETING_CACHE_TTL_SECONDS
 
 def enqueue_meeting_analysis_job(transcript: str, user_id: str) -> str:
     """
@@ -150,7 +151,7 @@ async def process_meeting_transcript(
     
     logger.info("process_meeting_start", transcript_length=len(transcript), user_hash=hash_user_id(user_uuid))
     
-    # Business rule validation
+    # Basic validation
     if len(transcript) < 10:
         logger.warning("transcript_too_short")
         raise ValidationError("Transcript is too short to process.")
@@ -158,7 +159,7 @@ async def process_meeting_transcript(
     # Calculate transcript hash for deduplication
     transcript_hash = generate_transcript_hash(transcript)
     
-    # Check database FIRST to avoid unnecessary AI processing
+    # Check database FIRST to avoid unnecessary token estimation and limit enforcement for duplicates
     logger.info("checking_existing_meeting")
     db_check_start = time.perf_counter()
     existing = await db.execute(
@@ -180,6 +181,14 @@ async def process_meeting_transcript(
             summary=existing_meeting.summary_text,
             action_items=existing_meeting.action_items or [],
         )
+
+    # Only validate tokens and enforce limits for NEW transcripts (not duplicates)
+    estimated_tokens = estimate_token_count(transcript)
+    if estimated_tokens > settings.MAX_TRANSCRIPT_TOKENS:
+        logger.warning("transcript_token_cap_exceeded")
+        raise ValidationError("Transcript exceeds the maximum token limit.")
+
+    await enforce_daily_usage_limits(db, user_uuid, estimated_tokens=estimated_tokens)
 
     # Meeting doesn't exist - proceed with AI processing
     cache_key = meeting_cache_key(transcript)
@@ -449,22 +458,33 @@ async def get_meeting_detail(
             logger.warning("meeting_not_found", user_hash=hash_user_id(user_uuid))
             raise NotFoundError("Meeting not found or access denied.")
         
-        # Get usage info
+        # Get aggregated usage info (sum across multiple usage records)
+        # Use subquery to get most recent model name instead of max (which is lexicographic)
+        most_recent_model = select(UsageRecord.model_name).where(
+            UsageRecord.meeting_id == meeting.id
+        ).order_by(UsageRecord.created_at.desc()).limit(1).scalar_subquery()
+        
         usage_result = await db.execute(
-            select(UsageRecord).where(UsageRecord.meeting_id == meeting.id)
+            select(
+                func.sum(UsageRecord.total_tokens).label('total_tokens'),
+                func.sum(UsageRecord.estimated_cost).label('estimated_cost'),
+                func.sum(UsageRecord.prompt_tokens).label('prompt_tokens'),
+                func.sum(UsageRecord.completion_tokens).label('completion_tokens'),
+                most_recent_model.label('model_name')
+            ).where(UsageRecord.meeting_id == meeting.id)
         )
-        usage_record = usage_result.scalar_one_or_none()
+        usage_row = usage_result.one_or_none()
         
         return {
             "id": str(meeting.id),
             "created_at": meeting.created_at,
             "summary": meeting.summary_text,
             "action_items": meeting.action_items or [],
-            "total_tokens": usage_record.total_tokens if usage_record else 0,
-            "estimated_cost": usage_record.estimated_cost if usage_record else 0,
-            "model_name": usage_record.model_name if usage_record else None,
-            "prompt_tokens": usage_record.prompt_tokens if usage_record else 0,
-            "completion_tokens": usage_record.completion_tokens if usage_record else 0
+            "total_tokens": usage_row.total_tokens if usage_row and usage_row.total_tokens else 0,
+            "estimated_cost": usage_row.estimated_cost if usage_row and usage_row.estimated_cost else 0,
+            "model_name": usage_row.model_name if usage_row else None,
+            "prompt_tokens": usage_row.prompt_tokens if usage_row and usage_row.prompt_tokens else 0,
+            "completion_tokens": usage_row.completion_tokens if usage_row and usage_row.completion_tokens else 0
         }
     
     except NotFoundError:
