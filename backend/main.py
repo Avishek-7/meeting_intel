@@ -5,7 +5,6 @@ from core.middleware.middleware import log_request_middleware as log_request
 from core.middleware.request_context import request_context_middleware
 from api.auth import router as auth_router
 from core.logging import configure_logging
-import uvicorn
 
 # Configure logging before anything else
 configure_logging()

@@ -1,5 +1,4 @@
 import redis
-import os
 from typing import Optional
 import logging
 import threading

@@ -7,7 +7,6 @@ from core.exceptions import DatabaseError
 from core.security import verify_access_token
 from core.config import settings
 from core.users import fake_users_db
-from core.rbac import Role
 from services.user_service import get_user_by_email
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)

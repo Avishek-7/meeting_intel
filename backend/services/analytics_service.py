@@ -6,8 +6,6 @@ import uuid
 from decimal import Decimal
 from typing import Dict, List, Tuple
 from models.usage_record import UsageRecord
-from models.meeting import Meeting
-from models.user import User
 import structlog
 
 logger = structlog.get_logger("services.analytics_service")

@@ -6,7 +6,6 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
-from functools import wraps
 from typing import Type, Tuple
 
 logger = structlog.get_logger("core.retry")

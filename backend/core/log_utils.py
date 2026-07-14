@@ -12,7 +12,7 @@ import asyncio
 import structlog
 import time
 import functools
-from typing import Optional, Any, Callable
+from typing import Optional, Callable
 from contextlib import asynccontextmanager
 import traceback
 
