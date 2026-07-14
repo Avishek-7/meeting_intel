@@ -188,7 +188,7 @@ async def authenticate_user(
     normalized_email = normalize_email(email)
     try:
         result = await db.execute(
-            select(User).where(User.email == normalized_email, User.is_active == True)
+            select(User).where(User.email == normalized_email, User.is_active)
         )
         user = result.scalar_one_or_none()
     except SQLAlchemyError as e:
