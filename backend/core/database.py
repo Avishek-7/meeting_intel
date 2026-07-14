@@ -19,6 +19,8 @@ def _get_async_db_url(sync_url: str) -> str:
     """Convert sync database URL to async database URL."""
     scheme = sync_url.split(":", 1)[0] if sync_url else "unknown"
     logger.debug("Converting database URL to async driver (scheme=%s).", scheme)
+    if sync_url.startswith("postgresql+asyncpg://"):
+        return sync_url
     if sync_url.startswith("postgresql://"):
         return sync_url.replace("postgresql://", "postgresql+asyncpg://")
     elif sync_url.startswith("postgres://"):
@@ -40,16 +42,15 @@ AsyncSessionLocal = async_sessionmaker(
 Base = declarative_base()
 
 # Import models to register them with SQLAlchemy
-from models import Meeting, User, UsageRecord  # noqa: E402
+from models import Meeting as _Meeting, User as _User, UsageRecord as _UsageRecord  # noqa: E402,F401
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     logger.debug("Opening async database session.")
     async with AsyncSessionLocal() as session:
         try:
             yield session
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             logger.error("Database error during session.", exc_info=True)
             raise
         finally:
             logger.debug("Closing async database session.")
-

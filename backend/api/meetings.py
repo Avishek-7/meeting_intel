@@ -30,13 +30,11 @@ from services.user_service import get_or_create_user_by_email
 from core.exceptions import ValidationError, AIServiceError, DatabaseError, NotFoundError
 from core.dependencies import get_current_user
 from core.authorization import get_admin_user
-from core.rbac import log_admin_action
 from core.database import get_db
 from core.queue import redis_client as queue_redis_client
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
 from redis.exceptions import RedisError
-from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -127,7 +125,7 @@ async def enqueue_meeting_analysis(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(e),
         )
-    except (AIServiceError, RedisError) as e:
+    except (AIServiceError, RedisError):
         logger.exception("Queue unavailable during meeting processing.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

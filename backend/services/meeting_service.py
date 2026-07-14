@@ -14,7 +14,7 @@ from core.cache_invalidation import invalidate_meeting_cache
 from services.usage_service import track_ai_usage
 from core.queue import default_queue
 from core.privacy import hash_user_id, hash_meeting_id
-from core.log_utils import log_error, log_info, log_warning, log_operation
+from core.log_utils import log_error, log_info, log_warning
 import json
 import structlog
 import time

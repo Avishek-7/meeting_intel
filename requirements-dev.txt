@@ -1,0 +1,18 @@
+# ===============================
+# Development & Testing Dependencies
+# ===============================
+
+# Install production dependencies first
+-r requirements.txt
+
+# Testing Framework
+pytest==9.0.2
+pytest-asyncio==1.4.0
+pytest-cov==4.1.0
+httpx>=0.23.0,<0.29.0
+
+# Code Quality Tools
+ruff==0.12.4
+black==24.2.0
+flake8==7.0.0
+mypy==1.8.0
