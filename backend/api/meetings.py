@@ -32,7 +32,6 @@ from core.exceptions import ValidationError, AIServiceError, DatabaseError, NotF
 from core.dependencies import get_current_user
 from core.security import verify_access_token
 from core.authorization import get_admin_user
-from core.rbac import log_admin_action
 from core.database import get_db, get_async_session
 from core.transcript import estimate_token_count
 from core.config import settings
@@ -44,7 +43,6 @@ from services.ai.transcription import transcribe_audio_bytes, infer_audio_extens
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
 from redis.exceptions import RedisError
-from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
 from pathlib import Path
 import os

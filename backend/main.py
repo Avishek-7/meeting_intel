@@ -79,7 +79,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     try:
         await db.execute(text("SELECT 1"))
         checks["database"] = "ok"
-    except Exception as exc:
+    except Exception:
         logger.error("Health check: database unavailable", exc_info=True)
         checks["database"] = "unavailable"
         healthy = False
@@ -90,7 +90,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         try:
             redis.ping()
             checks["redis"] = "ok"
-        except Exception as exc:
+        except Exception:
             logger.warning("Health check: redis unavailable", exc_info=True)
             checks["redis"] = "unavailable"
             # Redis is non-critical (falls back to memory), don't mark unhealthy

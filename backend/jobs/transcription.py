@@ -28,7 +28,7 @@ async def _run_transcription_job(meeting_id: str, user_id: str) -> dict:
 
         try:
             transcript = await transcribe_audio_file(meeting.audio_file_path)
-        except Exception as exc:
+        except Exception:
             meeting.transcription_status = "failed"
             await db.commit()
             raise
